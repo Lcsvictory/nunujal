@@ -271,7 +271,38 @@ def handle_google_callback(
         url=_frontend_redirect_url(
             "/projects/select",
             auth="success",
-            message="Login successful. Project selection page is not implemented yet.",
+            message="Login successful",
+        ),
+        status_code=302,
+    )
+    _set_auth_cookie(response, jwt_token)
+    return response
+
+# For testing purposes only - do not use in production
+@router.get("/logined-leader", summary="For testing: log in as a dummy leader user without Google OAuth")
+def login_as_dummy_leader(request: FastAPIRequest) -> RedirectResponse:
+    return for_test_token_cookie_return("dummy_google_leader_001")
+
+@router.get("/logined-member", summary="For testing: log in as a dummy member user without Google OAuth")
+def login_as_dummy_member(request: FastAPIRequest) -> RedirectResponse:
+    return for_test_token_cookie_return("dummy_google_member_001")
+
+
+def for_test_token_cookie_return(id: str) -> RedirectResponse:
+    session = get_session()
+    try:
+        user = session.query(models.AppUser).filter(models.AppUser.provider_user_id == id).first()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Database error or user not found.") from exc
+    finally:
+        session.close()
+
+    jwt_token = create_jwt_token(user)
+    response = RedirectResponse(
+        url=_frontend_redirect_url(
+            "/projects/select",
+            auth="success",
+            message="Login successful",
         ),
         status_code=302,
     )

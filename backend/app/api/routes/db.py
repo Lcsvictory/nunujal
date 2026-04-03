@@ -364,9 +364,11 @@ def create_tables_and_seed_dummy_data() -> dict[str, int | str]:
         session.close()
 
 
-@router.get("", summary="Databases")
+@router.get("drop-and-create", summary="Databases reset (drop and create tables)")
 def databases() -> dict[str, str]:
-    return {"status": "ok"}
+    models.Base.metadata.drop_all(bind=get_engine())
+    create_tables()
+    return {"tables": "dropped and created."}
 
 
 @router.post("/users", summary="Create app user manually")
