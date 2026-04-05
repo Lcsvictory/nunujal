@@ -73,3 +73,9 @@ export function apiJsonRequest<T>(
 export function getGoogleLoginUrl(): string {
   return `${backendBaseUrl}/api/auth/google/login`;
 }
+
+export function logout(): Promise<{ ok: boolean }> {
+  return apiRequest<{ ok: boolean }>("/api/auth/logout", {
+    method: "POST",
+  });
+}

@@ -308,6 +308,7 @@ def read_current_user(
                     "email": user.email,
                     "name": user.name,
                     "provider": user.provider,
+                    "department": user.department,
                     "profile_image_url": user.profile_image_url,
                     "status": user.status,
                 },

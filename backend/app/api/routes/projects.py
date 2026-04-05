@@ -62,6 +62,7 @@ def _serialize_current_user(user: models.AppUser) -> dict[str, object]:
         "email": user.email,
         "name": user.name,
         "provider": user.provider,
+        "department": user.department,
         "profile_image_url": user.profile_image_url,
         "status": user.status,
     }
