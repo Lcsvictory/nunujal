@@ -4,14 +4,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+import app.models as models
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.database import get_engine
 
 settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    models.Base.metadata.create_all(bind=get_engine())
     yield
 
 

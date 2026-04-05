@@ -88,6 +88,72 @@ export type ProjectDetailResponse = {
   project: ProjectDetail;
 };
 
+export type ProjectWorkItemSummary = {
+  id: number;
+  title: string;
+  description: string;
+  status: "TODO" | "IN_PROGRESS" | "DONE";
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  due_date: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  timeline_start_date: string;
+  timeline_end_date: string;
+  duration_days: number;
+  creator: {
+    id: number;
+    name: string;
+  };
+  assignee: {
+    id: number;
+    name: string;
+  } | null;
+};
+
+export type ProjectWorkItemDependency = {
+  id: number;
+  predecessor_work_item_id: number;
+  successor_work_item_id: number;
+  created_at: string;
+};
+
+export type ProjectWorkItemListResponse = {
+  project_id: number;
+  count: number;
+  items: ProjectWorkItemSummary[];
+  dependency_count: number;
+  dependencies: ProjectWorkItemDependency[];
+};
+
+export type CreateProjectWorkItemPayload = {
+  title: string;
+  description: string;
+  status: "TODO" | "IN_PROGRESS" | "DONE";
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  assignee_user_id: number | null;
+  timeline_start_date: string;
+  timeline_end_date: string;
+};
+
+export type UpdateProjectWorkItemPayload = Partial<CreateProjectWorkItemPayload>;
+
+export type WorkItemMutationResponse = {
+  message: string;
+  item: ProjectWorkItemSummary;
+};
+
+export type CreateProjectWorkItemDependencyPayload = {
+  predecessor_work_item_id: number;
+  successor_work_item_id: number;
+};
+
+export type WorkItemDependencyMutationResponse = {
+  message: string;
+  dependency: ProjectWorkItemDependency;
+};
+
 export type CreateProjectPayload = {
   title: string;
   description: string;

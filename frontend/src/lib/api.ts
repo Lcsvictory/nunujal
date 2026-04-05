@@ -1,5 +1,19 @@
 const backendBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8028";
 
+export function getApiBaseUrl(): string {
+  return backendBaseUrl;
+}
+
+export function getApiWebSocketBaseUrl(): string {
+  if (backendBaseUrl.startsWith("https://")) {
+    return `wss://${backendBaseUrl.slice("https://".length)}`;
+  }
+  if (backendBaseUrl.startsWith("http://")) {
+    return `ws://${backendBaseUrl.slice("http://".length)}`;
+  }
+  return backendBaseUrl;
+}
+
 export class ApiError extends Error {
   status: number;
   payload: unknown;

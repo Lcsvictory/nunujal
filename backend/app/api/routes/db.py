@@ -3,13 +3,11 @@ from decimal import Decimal
 
 from fastapi import APIRouter
 from pydantic import BaseModel
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 import app.models as models
-from app.core.config import get_settings
+from app.database import get_engine, get_session
 
-settings = get_settings()
 router = APIRouter()
 
 
@@ -22,17 +20,6 @@ class CreateUserRequest(BaseModel):
     department: str | None = None
     profile_image_url: str | None = None
     status: str = "ACTIVE"
-
-
-def get_engine():
-    return create_engine(settings.database_url)
-
-
-def get_session() -> Session:
-    session_factory = sessionmaker(bind=get_engine())
-    return session_factory()
-
-
 def create_tables() -> None:
     engine = get_engine()
     models.Base.metadata.create_all(bind=engine)
@@ -171,6 +158,14 @@ def insert_dummy_data(session: Session) -> dict[str, int | str]:
         due_date=date(2026, 4, 15),
     )
     session.add_all([work_item_1, work_item_2])
+    session.flush()
+
+    work_item_dependency = models.WorkItemDependency(
+        project_id=project.id,
+        predecessor_work_item_id=work_item_1.id,
+        successor_work_item_id=work_item_2.id,
+    )
+    session.add(work_item_dependency)
     session.flush()
 
     activity_1 = models.Activity(
@@ -343,6 +338,7 @@ def insert_dummy_data(session: Session) -> dict[str, int | str]:
         "project_join_requests": 1,
         "project_members": 3,
         "work_items": 2,
+        "work_item_dependencies": 1,
         "activities": 2,
         "activity_revisions": 1,
         "ai_analyses": 1,
@@ -364,7 +360,7 @@ def create_tables_and_seed_dummy_data() -> dict[str, int | str]:
         session.close()
 
 
-@router.get("drop-and-create", summary="Databases reset (drop and create tables)")
+@router.get("/drop-and-create", summary="Databases reset (drop and create tables)")
 def databases() -> dict[str, str]:
     models.Base.metadata.drop_all(bind=get_engine())
     create_tables()

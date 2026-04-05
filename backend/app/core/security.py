@@ -50,12 +50,10 @@ def get_access_token_from_request(
     return request.cookies.get("access_token")
 
 
-def get_authenticated_user(
+def get_authenticated_user_from_token(
     session: Session,
-    request: FastAPIRequest,
-    authorization: str | None = None,
+    token: str | None,
 ) -> models.AppUser:
-    token = get_access_token_from_request(request, authorization)
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
@@ -68,3 +66,12 @@ def get_authenticated_user(
         raise HTTPException(status_code=403, detail="Inactive user cannot access this resource.")
 
     return user
+
+
+def get_authenticated_user(
+    session: Session,
+    request: FastAPIRequest,
+    authorization: str | None = None,
+) -> models.AppUser:
+    token = get_access_token_from_request(request, authorization)
+    return get_authenticated_user_from_token(session, token)

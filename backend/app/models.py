@@ -144,6 +144,10 @@ class Project(Base):
         cascade="all, delete-orphan",
     )
     work_items: Mapped[list["WorkItem"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    work_item_dependencies: Mapped[list["WorkItemDependency"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
     activities: Mapped[list["Activity"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     ai_analyses: Mapped[list["AiAnalysis"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     feedback_reviews: Mapped[list["FeedbackReview"]] = relationship(
@@ -256,7 +260,59 @@ class WorkItem(Base):
         back_populates="assigned_work_items",
         foreign_keys=[assignee_user_id],
     )
+    outgoing_dependencies: Mapped[list["WorkItemDependency"]] = relationship(
+        back_populates="predecessor_work_item",
+        foreign_keys="WorkItemDependency.predecessor_work_item_id",
+        cascade="all, delete-orphan",
+    )
+    incoming_dependencies: Mapped[list["WorkItemDependency"]] = relationship(
+        back_populates="successor_work_item",
+        foreign_keys="WorkItemDependency.successor_work_item_id",
+        cascade="all, delete-orphan",
+    )
     activities: Mapped[list["Activity"]] = relationship(back_populates="work_item")
+
+
+class WorkItemDependency(Base):
+    __tablename__ = "work_item_dependency"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "predecessor_work_item_id",
+            "successor_work_item_id",
+            name="uq_work_item_dependency_pair",
+        ),
+        CheckConstraint(
+            "predecessor_work_item_id <> successor_work_item_id",
+            name="chk_work_item_dependency_not_self",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT, Identity(always=True), primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("project.id", ondelete="CASCADE"), nullable=False)
+    predecessor_work_item_id: Mapped[int] = mapped_column(
+        ForeignKey("work_item.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    successor_work_item_id: Mapped[int] = mapped_column(
+        ForeignKey("work_item.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP,
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    project: Mapped["Project"] = relationship(back_populates="work_item_dependencies")
+    predecessor_work_item: Mapped["WorkItem"] = relationship(
+        back_populates="outgoing_dependencies",
+        foreign_keys=[predecessor_work_item_id],
+    )
+    successor_work_item: Mapped["WorkItem"] = relationship(
+        back_populates="incoming_dependencies",
+        foreign_keys=[successor_work_item_id],
+    )
 
 
 class Activity(Base):

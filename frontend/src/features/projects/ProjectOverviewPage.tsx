@@ -164,12 +164,36 @@ export function ProjectOverviewPage({
 
     return (
       <div className="workspace-section-stack">
-
         <ProjectGanttChart
+          projectId={project.id}
           startDate={project.start_date}
           endDate={project.end_date}
-          completionRate={completionRate}
+          projectMembers={project.members}
+          isVisible={currentSection === "overview"}
         />
+        {/*
+        <Suspense
+          fallback={
+            <section className="surface-panel gantt-card">
+              <div className="section-heading">
+                <div>
+                  <p className="section-label">gantt</p>
+                  <h2>워크아이템 일정을 불러오는 중입니다.</h2>
+                </div>
+              </div>
+              <div className="skeleton-line skeleton-line-short" />
+              <div className="skeleton-line" />
+              <div className="skeleton-line" />
+            </section>
+          }
+        >
+          <LazyProjectGanttChart
+            startDate={project.start_date}
+            endDate={project.end_date}
+            completionRate={completionRate}
+          />
+        </Suspense>
+        */}
 
         <section className="surface-panel workspace-project-card">
           <div className="workspace-project-card-top">
@@ -392,11 +416,31 @@ export function ProjectOverviewPage({
             </section>
           ) : null}
 
-          {!isLoading && !errorMessage
-            ? activeSection === "overview"
-              ? renderOverviewSection()
-              : renderPlaceholderSection()
-            : null}
+          {!isLoading && !errorMessage ? (
+            <>
+              <div
+                className={
+                  activeSection === "overview"
+                    ? "workspace-section-visible"
+                    : "workspace-section-hidden"
+                }
+                aria-hidden={activeSection !== "overview"}
+              >
+                {renderOverviewSection()}
+              </div>
+
+              <div
+                className={
+                  activeSection === "overview"
+                    ? "workspace-section-hidden"
+                    : "workspace-section-visible"
+                }
+                aria-hidden={activeSection === "overview"}
+              >
+                {activeSection === "overview" ? null : renderPlaceholderSection()}
+              </div>
+            </>
+          ) : null}
         </main>
       </div>
     </div>

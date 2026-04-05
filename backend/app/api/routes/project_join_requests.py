@@ -2,24 +2,13 @@ from datetime import datetime
 
 from fastapi import APIRouter, Header, HTTPException, Request as FastAPIRequest, status
 from pydantic import BaseModel
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 import app.models as models
-from app.core.config import get_settings
 from app.core.security import get_authenticated_user
+from app.database import get_session
 
 router = APIRouter()
-settings = get_settings()
-
-
-def get_engine():
-    return create_engine(settings.database_url)
-
-
-def get_session() -> Session:
-    session_factory = sessionmaker(bind=get_engine())
-    return session_factory()
 
 
 class CreateProjectJoinRequestRequest(BaseModel):

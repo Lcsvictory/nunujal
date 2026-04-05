@@ -1,223 +1,1471 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { gantt, type GanttStatic, type Link, type Task } from "dhtmlx-gantt";
+import "dhtmlx-gantt/codebase/dhtmlxgantt.css";
+import { ApiError } from "../../lib/api";
+import {
+  createProjectWorkItemDependency,
+  deleteProjectWorkItem,
+  deleteProjectWorkItemDependency,
+  fetchProjectWorkItems,
+  getProjectWorkItemsWebSocketUrl,
+  updateProjectWorkItem,
+} from "./api";
+import type {
+  ProjectMemberSummary,
+  ProjectWorkItemDependency,
+  ProjectWorkItemSummary,
+  UpdateProjectWorkItemPayload,
+} from "./types";
+
 type ProjectGanttChartProps = {
+  projectId: number;
   startDate: string;
   endDate: string;
-  completionRate: number;
+  projectMembers: ProjectMemberSummary[];
+  isVisible: boolean;
 };
 
-type GanttMonth = {
-  key: string;
-  label: string;
-};
+type WorkItemStatus = "done" | "in_progress" | "planned";
 
-type GanttPhase = {
+type ChartWorkItem = {
   id: string;
-  label: string;
+  numericId: number;
+  code: string;
+  title: string;
+  description: string;
   owner: string;
-  note: string;
-  startOffsetPercent: number;
-  widthPercent: number;
-  status: "done" | "active" | "planned";
+  creatorName: string;
+  status: WorkItemStatus;
+  priority: ProjectWorkItemSummary["priority"];
+  priorityLabel: string;
+  progress: number;
+  startDate: string;
+  endDate: string;
+  durationDays: number;
+  assigneeUserId: number | null;
+  updatedAt: string;
 };
 
-const dayInMilliseconds = 1000 * 60 * 60 * 24;
+type ChartWorkItemDependency = {
+  id: string;
+  numericId: number;
+  predecessorWorkItemId: string;
+  successorWorkItemId: string;
+};
 
-function toDate(value: string): Date {
+type DhtmlxTask = Task & {
+  code: string;
+  description: string;
+  owner: string;
+  assignee_user_id: string;
+  status_code: WorkItemStatus;
+  status_label: string;
+  priority_code: ProjectWorkItemSummary["priority"];
+  priority_label: string;
+  creator_name: string;
+  start_label: string;
+  end_label: string;
+  updated_label: string;
+};
+
+const STATUS_META: Record<
+  WorkItemStatus,
+  { label: string; barColor: string; progressColor: string }
+> = {
+  done: { label: "완료", barColor: "#2557ff", progressColor: "#1837a5" },
+  in_progress: { label: "진행 중", barColor: "#0f87df", progressColor: "#0c5fa0" },
+  planned: { label: "예정", barColor: "#7d8aa5", progressColor: "#5b6884" },
+};
+
+const PRIORITY_LABELS: Record<ProjectWorkItemSummary["priority"], string> = {
+  LOW: "낮음",
+  MEDIUM: "보통",
+  HIGH: "높음",
+};
+
+const ZOOM_LEVELS = [
+  { name: "좁게", min_column_width: 34 },
+  { name: "기본", min_column_width: 48 },
+  { name: "넓게", min_column_width: 64 },
+] as const;
+
+function parseLocalDate(value: string): Date {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day);
 }
 
-function calculateInclusiveDays(startDate: Date, endDate: Date): number {
-  return Math.max(1, Math.floor((endDate.getTime() - startDate.getTime()) / dayInMilliseconds) + 1);
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
-function buildMonthLabels(startDate: Date, endDate: Date): GanttMonth[] {
-  const formatter = new Intl.DateTimeFormat("ko-KR", { month: "long" });
-  const labels: GanttMonth[] = [];
-  const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-  const finalMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
 
-  while (cursor <= finalMonth) {
-    labels.push({
-      key: `${cursor.getFullYear()}-${cursor.getMonth() + 1}`,
-      label: formatter.format(cursor),
-    });
-    cursor.setMonth(cursor.getMonth() + 1);
+function endOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+}
+
+function addDays(date: Date, amount: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + amount);
+}
+
+function differenceInDays(later: Date, earlier: Date): number {
+  return Math.round((startOfDay(later).getTime() - startOfDay(earlier).getTime()) / 86400000);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function toLocalIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateLabel(value: string): string {
+  const date = parseLocalDate(value);
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}.${month}.${day}`;
+}
+
+function formatDateTimeLabel(value: string): string {
+  const date = new Date(value);
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function formatMonthScale(date: Date): string {
+  if (date.getMonth() === 0) {
+    return `${date.getFullYear()}년 ${date.getMonth() + 1}월`;
+  }
+  return `${date.getMonth() + 1}월`;
+}
+
+function centerTimelineOnDate(ganttInstance: GanttStatic, date: Date) {
+  const taskData = ganttInstance.$task_data as HTMLElement | undefined;
+  if (!taskData) {
+    return;
   }
 
-  return labels;
+  const { y } = ganttInstance.getScrollState();
+  const targetX = ganttInstance.posFromDate(date) - taskData.clientWidth / 2;
+  ganttInstance.scrollTo(Math.max(targetX, 0), y);
 }
 
-function buildPrototypePhases(
-  startDate: Date,
-  endDate: Date,
-  completionRate: number,
-): GanttPhase[] {
-  const totalDays = calculateInclusiveDays(startDate, endDate);
-  const completionProgress = completionRate / 100;
-  const segments = [
-    {
-      id: "scope",
-      label: "기획 및 요구사항 정리",
-      owner: "PM · 팀장",
-      note: "범위 정의, 목표 확정, 역할 분담",
-      share: 0.16,
-    },
-    {
-      id: "design",
-      label: "화면 설계 및 구조 정리",
-      owner: "프론트 · 기획",
-      note: "플로우 정리, 정보 구조, 화면 초안",
-      share: 0.18,
-    },
-    {
-      id: "build",
-      label: "핵심 기능 구현",
-      owner: "프론트 · 백엔드",
-      note: "업무 기능, 프로젝트 구조, API 연결",
-      share: 0.34,
-    },
-    {
-      id: "analysis",
-      label: "AI 기여도 분석 연동",
-      owner: "AI · 데이터",
-      note: "기여도 계산 흐름, 검증용 지표 정리",
-      share: 0.18,
-    },
-    {
-      id: "qa",
-      label: "검수 및 발표 준비",
-      owner: "전체 팀",
-      note: "QA, 피드백 반영, 발표 자료 준비",
-      share: 0.14,
-    },
-  ];
+function isDateVisible(ganttInstance: GanttStatic, date: Date): boolean {
+  const taskData = ganttInstance.$task_data as HTMLElement | undefined;
+  if (!taskData) {
+    return false;
+  }
 
-  let consumedDays = 0;
+  const { x } = ganttInstance.getScrollState();
+  const targetX = ganttInstance.posFromDate(date);
+  return targetX >= x && targetX <= x + taskData.clientWidth;
+}
 
-  return segments.map((segment, index) => {
-    const remainingDays = totalDays - consumedDays;
-    const phaseDays =
-      index === segments.length - 1
-        ? remainingDays
-        : Math.max(1, Math.round(totalDays * segment.share));
-    const safePhaseDays = index === segments.length - 1 ? remainingDays : Math.min(phaseDays, remainingDays);
-    const phaseStartDay = consumedDays;
-    const phaseEndDay = consumedDays + safePhaseDays;
-    const startFraction = phaseStartDay / totalDays;
-    const endFraction = phaseEndDay / totalDays;
+function getWorkItemStatus(status: ProjectWorkItemSummary["status"]): WorkItemStatus {
+  if (status === "DONE") {
+    return "done";
+  }
+  if (status === "IN_PROGRESS") {
+    return "in_progress";
+  }
+  return "planned";
+}
 
-    let status: GanttPhase["status"] = "planned";
-    if (completionProgress >= endFraction) {
-      status = "done";
-    } else if (completionProgress > startFraction) {
-      status = "active";
-    }
+function buildProgress(item: ProjectWorkItemSummary, startDate: string, endDate: string): number {
+  if (item.status === "DONE") {
+    return 100;
+  }
+  if (item.status === "TODO") {
+    return 0;
+  }
 
-    consumedDays += safePhaseDays;
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
+  const totalDays = Math.max(differenceInDays(end, start) + 1, 1);
+  const elapsedDays = clamp(differenceInDays(startOfDay(new Date()), start) + 1, 1, totalDays);
+  return clamp(Math.round((elapsedDays / totalDays) * 100), 10, 95);
+}
 
-    return {
-      id: segment.id,
-      label: segment.label,
-      owner: segment.owner,
-      note: segment.note,
-      startOffsetPercent: startFraction * 100,
-      widthPercent: (safePhaseDays / totalDays) * 100,
-      status,
-    };
-  });
+function toChartWorkItem(item: ProjectWorkItemSummary): ChartWorkItem {
+  const startDate = item.timeline_start_date;
+  const endDate = item.timeline_end_date;
+
+  return {
+    id: String(item.id),
+    numericId: item.id,
+    code: `WI-${String(item.id).padStart(3, "0")}`,
+    title: item.title,
+    description: item.description.trim() || "설명이 아직 없습니다.",
+    owner: item.assignee?.name ?? item.creator.name,
+    creatorName: item.creator.name,
+    status: getWorkItemStatus(item.status),
+    priority: item.priority,
+    priorityLabel: PRIORITY_LABELS[item.priority],
+    progress: buildProgress(item, startDate, endDate),
+    startDate,
+    endDate,
+    durationDays: item.duration_days,
+    assigneeUserId: item.assignee?.id ?? null,
+    updatedAt: item.updated_at,
+  };
+}
+
+function toChartWorkItemDependency(
+  dependency: ProjectWorkItemDependency,
+): ChartWorkItemDependency {
+  return {
+    id: String(dependency.id),
+    numericId: dependency.id,
+    predecessorWorkItemId: String(dependency.predecessor_work_item_id),
+    successorWorkItemId: String(dependency.successor_work_item_id),
+  };
+}
+
+function toDhtmlxTask(item: ChartWorkItem): DhtmlxTask {
+  const statusMeta = STATUS_META[item.status];
+
+  return {
+    id: item.id,
+    parent: 0,
+    text: item.title,
+    description: item.description,
+    start_date: parseLocalDate(item.startDate),
+    end_date: addDays(parseLocalDate(item.endDate), 1),
+    duration: Math.max(item.durationDays, 1),
+    progress: item.progress / 100,
+    code: item.code,
+    owner: item.owner,
+    assignee_user_id: item.assigneeUserId ? String(item.assigneeUserId) : "",
+    status_code: item.status,
+    status_label: statusMeta.label,
+    priority_code: item.priority,
+    priority_label: item.priorityLabel,
+    creator_name: item.creatorName,
+    start_label: formatDateLabel(item.startDate),
+    end_label: formatDateLabel(item.endDate),
+    updated_label: formatDateTimeLabel(item.updatedAt),
+    color: statusMeta.barColor,
+    progressColor: statusMeta.progressColor,
+    textColor: "#ffffff",
+    open: true,
+  };
+}
+
+function toDhtmlxLink(dependency: ChartWorkItemDependency): Link {
+  return {
+    id: dependency.id,
+    source: dependency.predecessorWorkItemId,
+    target: dependency.successorWorkItemId,
+    type: "0",
+  };
+}
+
+function toApiStatus(status: WorkItemStatus): ProjectWorkItemSummary["status"] {
+  if (status === "done") {
+    return "DONE";
+  }
+  if (status === "in_progress") {
+    return "IN_PROGRESS";
+  }
+  return "TODO";
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildQuickInfoContent(
+  item: ChartWorkItem | undefined,
+): string {
+  if (!item) {
+    return '<div class="gantt-quick-info-body"><p>워크아이템 정보를 불러오지 못했습니다.</p></div>';
+  }
+
+  return `
+    <div class="gantt-quick-info-body">
+      <p>${escapeHtml(item.description)}</p>
+      <dl class="gantt-quick-info-grid">
+        <div><dt>기간</dt><dd>${escapeHtml(formatDateLabel(item.startDate))} ~ ${escapeHtml(formatDateLabel(item.endDate))}</dd></div>
+        <div><dt>담당자</dt><dd>${escapeHtml(item.owner)}</dd></div>
+      </dl>
+    </div>
+  `;
 }
 
 export function ProjectGanttChart({
+  projectId,
   startDate,
   endDate,
-  completionRate,
+  projectMembers,
+  isVisible,
 }: ProjectGanttChartProps) {
-  const start = toDate(startDate);
-  const end = toDate(endDate);
-  const months = buildMonthLabels(start, end);
-  const phases = buildPrototypePhases(start, end, completionRate);
-  const gridTemplateColumns = `240px minmax(${Math.max(4, months.length) * 120}px, 1fr)`;
+  const shellRef = useRef<HTMLElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const ganttRef = useRef<GanttStatic | null>(null);
+  const markerIdRef = useRef<string | number | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const snapshotRequestIdRef = useRef(0);
+  const projectIdRef = useRef(projectId);
+  const workItemsRef = useRef<ChartWorkItem[]>([]);
+  const workItemMapRef = useRef<Map<string, ChartWorkItem>>(new Map());
+  const dependenciesRef = useRef<ChartWorkItemDependency[]>([]);
+  const projectMembersRef = useRef(projectMembers);
+  const isApplyingSnapshotRef = useRef(false);
+  const shouldCenterTodayRef = useRef(true);
+  const hasBootstrappedRef = useRef(false);
+  const [workItems, setWorkItems] = useState<ChartWorkItem[]>([]);
+  const [dependencies, setDependencies] = useState<ChartWorkItemDependency[]>([]);
+  const [selectedWorkItemId, setSelectedWorkItemId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isLinkSyncing, setIsLinkSyncing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [isDocumentVisible, setIsDocumentVisible] = useState(
+    () => document.visibilityState === "visible",
+  );
+  const [currentZoomLevel, setCurrentZoomLevel] = useState<string>(ZOOM_LEVELS[1].name);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [socketStatus, setSocketStatus] = useState<"idle" | "connecting" | "live" | "offline">(
+    "idle",
+  );
+  const [socketRetryKey, setSocketRetryKey] = useState(0);
+
+  const today = useMemo(() => startOfDay(new Date()), []);
+  const projectStart = useMemo(() => parseLocalDate(startDate), [startDate]);
+  const projectEnd = useMemo(() => parseLocalDate(endDate), [endDate]);
+  const chartRange = useMemo(() => {
+    let rangeStart = projectStart;
+    let rangeEnd = projectEnd;
+
+    for (const item of workItems) {
+      const itemStart = parseLocalDate(item.startDate);
+      const itemEnd = parseLocalDate(item.endDate);
+      if (itemStart.getTime() < rangeStart.getTime()) {
+        rangeStart = itemStart;
+      }
+      if (itemEnd.getTime() > rangeEnd.getTime()) {
+        rangeEnd = itemEnd;
+      }
+    }
+
+    if (today.getTime() < rangeStart.getTime()) {
+      rangeStart = today;
+    }
+    if (today.getTime() > rangeEnd.getTime()) {
+      rangeEnd = today;
+    }
+
+    return {
+      start: startOfMonth(rangeStart),
+      end: endOfMonth(rangeEnd),
+    };
+  }, [projectEnd, projectStart, today, workItems]);
+
+  projectIdRef.current = projectId;
+  workItemsRef.current = workItems;
+  workItemMapRef.current = new Map(workItems.map((item) => [item.id, item]));
+  dependenciesRef.current = dependencies;
+  projectMembersRef.current = projectMembers;
+
+  useEffect(() => {
+    shouldCenterTodayRef.current = true;
+    hasBootstrappedRef.current = false;
+    setSelectedWorkItemId(null);
+    setWorkItems([]);
+    setDependencies([]);
+    setSocketRetryKey(0);
+    setIsLoading(true);
+    setLastSyncedAt(null);
+    setErrorMessage(null);
+  }, [projectId]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsDocumentVisible(document.visibilityState === "visible");
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  async function refreshSnapshot(options?: { background?: boolean }) {
+    const requestId = snapshotRequestIdRef.current + 1;
+    snapshotRequestIdRef.current = requestId;
+
+    if (options?.background) {
+      setIsSyncing(true);
+    } else {
+      setIsLoading(true);
+    }
+
+    try {
+      const response = await fetchProjectWorkItems(projectIdRef.current);
+      if (snapshotRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setWorkItems(response.items.map(toChartWorkItem));
+      setDependencies(response.dependencies.map(toChartWorkItemDependency));
+      setLastSyncedAt(new Date().toISOString());
+      setErrorMessage(null);
+      hasBootstrappedRef.current = true;
+    } catch (error) {
+      if (snapshotRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setErrorMessage(
+        error instanceof ApiError
+          ? error.message
+          : "워크아이템 스냅샷을 불러오지 못했습니다.",
+      );
+    } finally {
+      if (snapshotRequestIdRef.current === requestId) {
+        setIsLoading(false);
+        setIsSyncing(false);
+      }
+    }
+  }
+
+  async function persistLightboxWorkItem(taskId: string, task: DhtmlxTask) {
+    const currentItem = workItemMapRef.current.get(taskId);
+    if (!currentItem) {
+      setErrorMessage("워크아이템 정보를 찾지 못했습니다.");
+      return;
+    }
+
+    const title = task.text.trim();
+    if (!title) {
+      setErrorMessage("워크아이템 제목은 비워둘 수 없습니다.");
+      return;
+    }
+
+    const payload: UpdateProjectWorkItemPayload = {
+      title,
+      description: task.description.trim(),
+      status: toApiStatus(task.status_code),
+      priority: task.priority_code,
+      assignee_user_id: task.assignee_user_id ? Number(task.assignee_user_id) : null,
+      timeline_start_date: toLocalIsoDate(startOfDay(task.start_date ?? parseLocalDate(currentItem.startDate))),
+      timeline_end_date: toLocalIsoDate(
+        addDays(startOfDay(task.end_date ?? addDays(parseLocalDate(currentItem.endDate), 1)), -1),
+      ),
+    };
+
+    try {
+      const response = await updateProjectWorkItem(projectIdRef.current, currentItem.numericId, payload);
+      const nextItem = toChartWorkItem(response.item);
+      setWorkItems((current) => current.map((item) => (item.id === nextItem.id ? nextItem : item)));
+      setSelectedWorkItemId(nextItem.id);
+      setLastSyncedAt(new Date().toISOString());
+      setErrorMessage(null);
+      ganttRef.current?.hideLightbox();
+      ganttRef.current?.showQuickInfo(nextItem.id);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof ApiError ? error.message : "워크아이템을 수정하지 못했습니다.",
+      );
+      void refreshSnapshot({ background: true });
+    }
+  }
+
+  async function deleteWorkItemById(workItemId: string) {
+    const currentItem = workItemMapRef.current.get(workItemId);
+    if (!currentItem) {
+      return;
+    }
+
+    const shouldDelete = window.confirm(
+      `"${currentItem.title}" 워크아이템을 삭제하시겠습니까? 연결선만 정리하고 다른 워크아이템은 유지합니다.`,
+    );
+    if (!shouldDelete) {
+      return;
+    }
+
+    try {
+      await deleteProjectWorkItem(projectIdRef.current, currentItem.numericId);
+      setWorkItems((current) => current.filter((item) => item.id !== currentItem.id));
+      setDependencies((current) =>
+        current.filter(
+          (dependency) =>
+            dependency.predecessorWorkItemId !== currentItem.id &&
+            dependency.successorWorkItemId !== currentItem.id,
+        ),
+      );
+      setSelectedWorkItemId(null);
+      setLastSyncedAt(new Date().toISOString());
+      setErrorMessage(null);
+      ganttRef.current?.hideQuickInfo();
+      ganttRef.current?.hideLightbox();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof ApiError ? error.message : "워크아이템을 삭제하지 못했습니다.",
+      );
+      void refreshSnapshot({ background: true });
+    }
+  }
+
+  useEffect(() => {
+    let isDisposed = false;
+
+    if (!isVisible || !isDocumentVisible) {
+      return () => {
+        isDisposed = true;
+      };
+    }
+
+    void refreshSnapshot({ background: hasBootstrappedRef.current });
+
+    const socket = new WebSocket(getProjectWorkItemsWebSocketUrl(projectId));
+    socketRef.current = socket;
+    setSocketStatus("connecting");
+
+    socket.onopen = () => {
+      if (!isDisposed) {
+        setSocketStatus("live");
+      }
+    };
+
+    socket.onmessage = (event) => {
+      if (isDisposed) {
+        return;
+      }
+
+      try {
+        const payload = JSON.parse(event.data) as { type?: string };
+        if (payload.type === "work_items_changed" || payload.type === "work_items_connected") {
+          void refreshSnapshot({ background: true });
+        }
+      } catch {
+        void refreshSnapshot({ background: true });
+      }
+    };
+
+    socket.onerror = () => {
+      if (!isDisposed) {
+        setSocketStatus("offline");
+      }
+    };
+
+    socket.onclose = () => {
+      if (isDisposed) {
+        return;
+      }
+      setSocketStatus("offline");
+      reconnectTimerRef.current = window.setTimeout(() => {
+        setSocketRetryKey((value) => value + 1);
+      }, 1500);
+    };
+
+    return () => {
+      isDisposed = true;
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      socket.close();
+      socketRef.current = null;
+    };
+  }, [isDocumentVisible, isVisible, projectId, socketRetryKey]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === shellRef.current);
+      if (!ganttRef.current) {
+        return;
+      }
+
+      shouldCenterTodayRef.current = true;
+      window.requestAnimationFrame(() => {
+        if (!ganttRef.current) {
+          return;
+        }
+        ganttRef.current.setSizes();
+        centerTimelineOnDate(ganttRef.current, today);
+      });
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, [today]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return undefined;
+    }
+
+    const ganttInstance = gantt;
+    const ganttConfig = ganttInstance.config as typeof ganttInstance.config & {
+      quickinfo_buttons: string[];
+      lightbox: {
+        sections: Array<Record<string, unknown>>;
+      };
+    };
+    const ganttWithButtons = ganttInstance as GanttStatic & {
+      $click: {
+        buttons: Record<string, (id: string | number) => boolean | void>;
+      };
+    };
+    ganttRef.current = ganttInstance;
+    ganttInstance.plugins({ marker: true, fullscreen: true, quick_info: true });
+    ganttInstance.clearAll();
+    ganttInstance.config.readonly = false;
+    ganttInstance.config.root_id = 0;
+    ganttInstance.config.open_tree_initially = true;
+    ganttInstance.config.show_progress = true;
+    ganttInstance.config.drag_move = false;
+    ganttInstance.config.drag_resize = false;
+    ganttInstance.config.drag_progress = false;
+    ganttInstance.config.drag_links = true;
+    ganttInstance.config.details_on_dblclick = false;
+    ganttInstance.config.show_quick_info = true;
+    ganttInstance.config.initial_scroll = false;
+    ganttInstance.config.wide_form = true;
+    ganttInstance.config.grid_width = 356;
+    ganttInstance.config.row_height = 56;
+    ganttInstance.config.bar_height = 28;
+    ganttInstance.config.show_links = true;
+    ganttInstance.config.smart_scales = true;
+    ganttConfig.quickinfo_buttons = ["icon_edit", "icon_delete"];
+    ganttInstance.locale.labels.icon_edit = "수정";
+    ganttInstance.locale.labels.icon_delete = "삭제";
+    ganttInstance.locale.labels.section_title = "제목";
+    ganttInstance.locale.labels.section_description = "설명";
+    ganttInstance.locale.labels.section_status = "상태";
+    ganttInstance.locale.labels.section_priority = "우선순위";
+    ganttInstance.locale.labels.section_assignee = "담당자";
+    ganttInstance.locale.labels.section_schedule = "기간";
+    ganttInstance.form_blocks.date_range = {
+      render() {
+        return `
+          <div class="gantt-date-range-editor">
+            <label class="gantt-date-range-field">
+              <span>시작일</span>
+              <input type="date" class="gantt-date-range-input" name="start-date" />
+            </label>
+            <label class="gantt-date-range-field">
+              <span>종료일</span>
+              <input type="date" class="gantt-date-range-input" name="end-date" />
+            </label>
+          </div>
+        `;
+      },
+      set_value(node, _value, task) {
+        const startInput = node.querySelector<HTMLInputElement>('input[name="start-date"]');
+        const endInput = node.querySelector<HTMLInputElement>('input[name="end-date"]');
+        if (!startInput || !endInput) {
+          return;
+        }
+
+        const start = startOfDay(task.start_date ?? today);
+        const endExclusive = startOfDay(task.end_date ?? addDays(start, 1));
+        const endInclusive = endExclusive.getTime() <= start.getTime() ? start : addDays(endExclusive, -1);
+        const syncBounds = () => {
+          endInput.min = startInput.value;
+          if (endInput.value && endInput.value < startInput.value) {
+            endInput.value = startInput.value;
+          }
+        };
+
+        startInput.value = toLocalIsoDate(start);
+        endInput.value = toLocalIsoDate(endInclusive);
+        startInput.oninput = syncBounds;
+        syncBounds();
+      },
+      get_value(node, _task) {
+        const startInput = node.querySelector<HTMLInputElement>('input[name="start-date"]');
+        const endInput = node.querySelector<HTMLInputElement>('input[name="end-date"]');
+        const fallbackStart = startOfDay(today);
+        const start = startInput?.value ? parseLocalDate(startInput.value) : fallbackStart;
+        const end = endInput?.value ? parseLocalDate(endInput.value) : start;
+        return {
+          start_date: start,
+          end_date: addDays(end.getTime() < start.getTime() ? start : end, 1),
+        };
+      },
+      focus(node) {
+        node.querySelector<HTMLInputElement>('input[name="start-date"]')?.focus();
+      },
+    };
+    ganttConfig.lightbox.sections = [
+      { name: "title", height: 42, map_to: "text", type: "textarea", focus: true },
+      { name: "description", height: 86, map_to: "description", type: "textarea" },
+      {
+        name: "status",
+        height: 42,
+        map_to: "status_code",
+        type: "select",
+        options: [
+          { key: "planned", label: STATUS_META.planned.label },
+          { key: "in_progress", label: STATUS_META.in_progress.label },
+          { key: "done", label: STATUS_META.done.label },
+        ],
+      },
+      {
+        name: "priority",
+        height: 42,
+        map_to: "priority_code",
+        type: "select",
+        options: [
+          { key: "LOW", label: PRIORITY_LABELS.LOW },
+          { key: "MEDIUM", label: PRIORITY_LABELS.MEDIUM },
+          { key: "HIGH", label: PRIORITY_LABELS.HIGH },
+        ],
+      },
+      {
+        name: "assignee",
+        height: 42,
+        map_to: "assignee_user_id",
+        type: "select",
+        options: [
+          { key: "", label: "미정" },
+          ...projectMembersRef.current.map((member) => ({
+            key: String(member.user_id),
+            label: `${member.name} · ${member.position_label}`,
+          })),
+        ],
+      },
+      { name: "schedule", height: 78, map_to: "auto", type: "date_range" },
+    ];
+    ganttInstance.config.columns = [
+      { name: "text", label: "워크아이템", tree: true, width: 210, resize: true },
+      { name: "owner", label: "담당자", align: "center", width: 82 },
+      { name: "status_label", label: "상태", align: "center", width: 64 },
+    ];
+    ganttInstance.templates.scale_cell_class = (date) => (date.getDate() === 1 ? "gantt-month-boundary-cell" : "");
+    ganttInstance.templates.timeline_cell_class = (_task, date) => {
+      if (
+        date.getFullYear() === today.getFullYear() &&
+        date.getMonth() === today.getMonth() &&
+        date.getDate() === today.getDate()
+      ) {
+        return "gantt-timeline-today-cell";
+      }
+      return "";
+    };
+    ganttInstance.templates.task_text = (_start, _end, task) => (task as DhtmlxTask).code;
+    ganttInstance.templates.task_class = (_start, _end, task) => {
+      const ganttTask = task as DhtmlxTask;
+      return `gantt-task-status-${ganttTask.status_code}`;
+    };
+    ganttInstance.templates.link_class = () => "gantt-work-item-link";
+    ganttInstance.templates.quick_info_title = (_start, _end, task) => {
+      const ganttTask = task as DhtmlxTask;
+      return `${ganttTask.code} · ${ganttTask.text}`;
+    };
+    ganttInstance.templates.quick_info_content = (_start, _end, task) =>
+      buildQuickInfoContent(workItemMapRef.current.get(String(task.id)));
+    ganttInstance.templates.quick_info_date = (_start, _end, task) => {
+      const ganttTask = task as DhtmlxTask;
+      return `${ganttTask.start_label} ~ ${ganttTask.end_label}`;
+    };
+    ganttInstance.ext.zoom.init({
+      activeLevelIndex: 1,
+      minColumnWidth: 34,
+      maxColumnWidth: 64,
+      levels: ZOOM_LEVELS.map((level) => ({
+        name: level.name,
+        min_column_width: level.min_column_width,
+        scale_height: 54,
+        scales: [
+          { unit: "month", step: 1, format: formatMonthScale },
+          { unit: "day", step: 1, format: "%d" },
+        ],
+      })),
+    });
+    ganttWithButtons.$click.buttons.icon_edit = (id: string | number) => {
+      ganttInstance.showLightbox(id);
+      return false;
+    };
+    ganttWithButtons.$click.buttons.icon_delete = (id: string | number) => {
+      void deleteWorkItemById(String(id));
+      return false;
+    };
+    ganttInstance.init(container);
+
+    const taskData = ganttInstance.$task_data as HTMLElement | undefined;
+    const handleTimelineWheel = (event: WheelEvent) => {
+      if (!event.shiftKey) {
+        return;
+      }
+
+      event.preventDefault();
+      const { x, y } = ganttInstance.getScrollState();
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      ganttInstance.scrollTo(Math.max(x + delta, 0), y);
+    };
+
+    taskData?.addEventListener("wheel", handleTimelineWheel, { passive: false });
+
+    const zoomEventId = ganttInstance.ext.zoom.attachEvent("onAfterZoom", (_level, config) => {
+      setCurrentZoomLevel(config.name);
+      shouldCenterTodayRef.current = true;
+      window.requestAnimationFrame(() => {
+        if (ganttRef.current) {
+          centerTimelineOnDate(ganttRef.current, today);
+        }
+      });
+      return true;
+    });
+    const taskClickEventId = ganttInstance.attachEvent("onTaskClick", (id) => {
+      setSelectedWorkItemId(String(id));
+      ganttInstance.selectTask(id);
+      return true;
+    });
+    const emptyClickEventId = ganttInstance.attachEvent("onEmptyClick", () => {
+      setSelectedWorkItemId(null);
+      ganttInstance.hideQuickInfo();
+      ganttInstance.unselectTask();
+    });
+    const beforeLinkAddEventId = ganttInstance.attachEvent("onBeforeLinkAdd", (_id, link) => {
+      if (String(link.source) === String(link.target)) {
+        setErrorMessage("같은 워크아이템끼리는 연결할 수 없습니다.");
+        return false;
+      }
+
+      const isDuplicate = dependenciesRef.current.some(
+        (dependency) =>
+          dependency.predecessorWorkItemId === String(link.source) &&
+          dependency.successorWorkItemId === String(link.target),
+      );
+      if (isDuplicate) {
+        setErrorMessage("이미 연결된 워크아이템 관계입니다.");
+        return false;
+      }
+
+      setErrorMessage(null);
+      return true;
+    });
+    const afterLinkAddEventId = ganttInstance.attachEvent("onAfterLinkAdd", (id, link) => {
+      if (isApplyingSnapshotRef.current) {
+        return;
+      }
+
+      setIsLinkSyncing(true);
+      void createProjectWorkItemDependency(projectIdRef.current, {
+        predecessor_work_item_id: Number(link.source),
+        successor_work_item_id: Number(link.target),
+      })
+        .then((response) => {
+          if (ganttInstance.isLinkExists(id)) {
+            ganttInstance.changeLinkId(id, String(response.dependency.id));
+          }
+          setDependencies((current) => {
+            const nextDependency = toChartWorkItemDependency(response.dependency);
+            const filtered = current.filter((dependency) => dependency.id !== String(id));
+            return [...filtered, nextDependency];
+          });
+          setErrorMessage(null);
+        })
+        .catch((error: unknown) => {
+          if (ganttInstance.isLinkExists(id)) {
+            isApplyingSnapshotRef.current = true;
+            ganttInstance.deleteLink(id);
+            isApplyingSnapshotRef.current = false;
+          }
+          setErrorMessage(
+            error instanceof ApiError ? error.message : "워크아이템 연결을 저장하지 못했습니다.",
+          );
+        })
+        .finally(() => {
+          setIsLinkSyncing(false);
+        });
+    });
+    const afterLinkDeleteEventId = ganttInstance.attachEvent("onAfterLinkDelete", (id) => {
+      if (isApplyingSnapshotRef.current) {
+        return;
+      }
+
+      setIsLinkSyncing(true);
+      void deleteProjectWorkItemDependency(projectIdRef.current, Number(id))
+        .then(() => {
+          setDependencies((current) =>
+            current.filter((dependency) => dependency.id !== String(id)),
+          );
+          setErrorMessage(null);
+        })
+        .catch((error: unknown) => {
+          setErrorMessage(
+            error instanceof ApiError ? error.message : "워크아이템 연결을 삭제하지 못했습니다.",
+          );
+          void refreshSnapshot({ background: true });
+        })
+        .finally(() => {
+          setIsLinkSyncing(false);
+        });
+    });
+    const lightboxSaveEventId = ganttInstance.attachEvent("onLightboxSave", (id, task) => {
+      void persistLightboxWorkItem(String(id), task as DhtmlxTask);
+      return false;
+    });
+    const lightboxDeleteEventId = ganttInstance.attachEvent("onLightboxDelete", (id) => {
+      void deleteWorkItemById(String(id));
+      return false;
+    });
+
+    return () => {
+      taskData?.removeEventListener("wheel", handleTimelineWheel);
+      ganttInstance.ext.zoom.detachEvent(zoomEventId);
+      ganttInstance.detachEvent(taskClickEventId);
+      ganttInstance.detachEvent(emptyClickEventId);
+      ganttInstance.detachEvent(beforeLinkAddEventId);
+      ganttInstance.detachEvent(afterLinkAddEventId);
+      ganttInstance.detachEvent(afterLinkDeleteEventId);
+      ganttInstance.detachEvent(lightboxSaveEventId);
+      ganttInstance.detachEvent(lightboxDeleteEventId);
+      if (markerIdRef.current !== null) {
+        ganttInstance.deleteMarker(markerIdRef.current);
+        markerIdRef.current = null;
+      }
+      ganttInstance.clearAll();
+      container.innerHTML = "";
+      ganttRef.current = null;
+    };
+  }, [today]);
+
+  useEffect(() => {
+    const ganttInstance = ganttRef.current;
+    if (!ganttInstance) {
+      return;
+    }
+
+    const scrollState = ganttInstance.getScrollState();
+    const nextTasks = workItems.map(toDhtmlxTask);
+    const nextLinks = dependencies.map(toDhtmlxLink);
+    const nextTaskIds = new Set(nextTasks.map((task) => String(task.id)));
+    const nextLinkIds = new Set(nextLinks.map((link) => String(link.id)));
+    const existingTaskIds: string[] = [];
+    const existingLinkIds = ganttInstance.getLinks().map((link) => String(link.id));
+
+    ganttInstance.eachTask((task) => {
+      existingTaskIds.push(String(task.id));
+    });
+
+    isApplyingSnapshotRef.current = true;
+    ganttInstance.batchUpdate(() => {
+      ganttInstance.config.start_date = chartRange.start;
+      ganttInstance.config.end_date = chartRange.end;
+      for (const task of nextTasks) {
+        if (ganttInstance.isTaskExists(task.id)) {
+          Object.assign(ganttInstance.getTask(task.id), task);
+          ganttInstance.updateTask(task.id);
+        } else {
+          ganttInstance.addTask(task, 0);
+        }
+      }
+      for (const existingTaskId of existingTaskIds) {
+        if (existingTaskId !== "0" && !nextTaskIds.has(existingTaskId) && ganttInstance.isTaskExists(existingTaskId)) {
+          ganttInstance.deleteTask(existingTaskId);
+        }
+      }
+      for (const link of nextLinks) {
+        if (ganttInstance.isLinkExists(link.id)) {
+          Object.assign(ganttInstance.getLink(link.id), link);
+          ganttInstance.updateLink(link.id);
+        } else {
+          ganttInstance.addLink(link);
+        }
+      }
+      for (const existingLinkId of existingLinkIds) {
+        if (!nextLinkIds.has(existingLinkId) && ganttInstance.isLinkExists(existingLinkId)) {
+          ganttInstance.deleteLink(existingLinkId);
+        }
+      }
+      if (markerIdRef.current !== null) {
+        ganttInstance.deleteMarker(markerIdRef.current);
+        markerIdRef.current = null;
+      }
+      markerIdRef.current = ganttInstance.addMarker({
+        start_date: today,
+        css: "gantt-today-marker",
+        text: "오늘",
+        title: formatDateLabel(toLocalIsoDate(today)),
+      });
+    });
+    isApplyingSnapshotRef.current = false;
+
+    window.requestAnimationFrame(() => {
+      if (!ganttRef.current) {
+        return;
+      }
+      ganttRef.current.setSizes();
+      if (shouldCenterTodayRef.current || !isDateVisible(ganttRef.current, today)) {
+        centerTimelineOnDate(ganttRef.current, today);
+        shouldCenterTodayRef.current = false;
+      } else {
+        ganttRef.current.scrollTo(scrollState.x, scrollState.y);
+      }
+    });
+  }, [chartRange.end, chartRange.start, dependencies, today, workItems]);
+
+  useEffect(() => {
+    const ganttInstance = ganttRef.current;
+    if (!ganttInstance) {
+      return;
+    }
+    if (selectedWorkItemId && ganttInstance.isTaskExists(selectedWorkItemId)) {
+      ganttInstance.selectTask(selectedWorkItemId);
+      return;
+    }
+    ganttInstance.unselectTask();
+  }, [selectedWorkItemId]);
+
+  useEffect(() => {
+    if (!isVisible || !ganttRef.current) {
+      return;
+    }
+
+    shouldCenterTodayRef.current = true;
+    window.requestAnimationFrame(() => {
+      if (!ganttRef.current) {
+        return;
+      }
+      ganttRef.current.setSizes();
+      if (!isDateVisible(ganttRef.current, today)) {
+        centerTimelineOnDate(ganttRef.current, today);
+      }
+      shouldCenterTodayRef.current = false;
+    });
+  }, [isVisible, today]);
+
+  const handleZoomIn = () => {
+    ganttRef.current?.ext.zoom.zoomIn();
+  };
+
+  const handleZoomOut = () => {
+    ganttRef.current?.ext.zoom.zoomOut();
+  };
+
+  const handleFocusToday = () => {
+    if (!ganttRef.current) {
+      return;
+    }
+    shouldCenterTodayRef.current = false;
+    centerTimelineOnDate(ganttRef.current, today);
+  };
+
+  const handleToggleFullscreen = async () => {
+    const shell = shellRef.current;
+    if (!shell) {
+      return;
+    }
+    if (document.fullscreenElement === shell) {
+      await document.exitFullscreen();
+      return;
+    }
+    await shell.requestFullscreen();
+  };
+
+  /*
+  const handleSaveSelectedWorkItem = async () => {
+    if (!selectedWorkItem || !inspectorDraft) {
+      return;
+    }
+
+    const title = inspectorDraft.title.trim();
+    if (!title) {
+      setErrorMessage("워크아이템 제목은 비워둘 수 없습니다.");
+      return;
+    }
+
+    const payload: UpdateProjectWorkItemPayload = {
+      title,
+      description: inspectorDraft.description.trim(),
+      status: inspectorDraft.status,
+      priority: inspectorDraft.priority,
+      assignee_user_id: inspectorDraft.assigneeUserId ? Number(inspectorDraft.assigneeUserId) : null,
+      timeline_start_date: inspectorDraft.timelineStartDate,
+      timeline_end_date: inspectorDraft.timelineEndDate,
+    };
+
+    setIsSaving(true);
+    try {
+      const response = await updateProjectWorkItem(projectId, selectedWorkItem.numericId, payload);
+      const nextItem = toChartWorkItem(response.item);
+      setWorkItems((current) => current.map((item) => (item.id === nextItem.id ? nextItem : item)));
+      setSelectedWorkItemId(nextItem.id);
+      setInspectorDraft(buildInspectorFormState(nextItem));
+      setIsEditing(false);
+      setLastSyncedAt(new Date().toISOString());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof ApiError ? error.message : "워크아이템을 수정하지 못했습니다.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteSelectedWorkItem = async () => {
+    if (!selectedWorkItem) {
+      return;
+    }
+
+    const shouldDelete = window.confirm(
+      `"${selectedWorkItem.title}" 워크아이템을 삭제하시겠습니까? 연결선만 정리되고 다른 워크아이템은 유지됩니다.`,
+    );
+    if (!shouldDelete) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await deleteProjectWorkItem(projectId, selectedWorkItem.numericId);
+      setWorkItems((current) => current.filter((item) => item.id !== selectedWorkItem.id));
+      setDependencies((current) =>
+        current.filter(
+          (dependency) =>
+            dependency.predecessorWorkItemId !== selectedWorkItem.id &&
+            dependency.successorWorkItemId !== selectedWorkItem.id,
+        ),
+      );
+      setSelectedWorkItemId(null);
+      setInspectorDraft(null);
+      setIsEditing(false);
+      setLastSyncedAt(new Date().toISOString());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof ApiError ? error.message : "워크아이템을 삭제하지 못했습니다.",
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+  */
 
   return (
-    <section className="surface-panel gantt-card">
+    <section ref={shellRef} className="gantt-card">
       <div className="section-heading">
         <div>
-          <p className="section-label">gantt chart</p>
-          <h2>프로젝트 간트차트</h2>
-          <p className="gantt-caption">
-            현재는 프로젝트 기간을 기준으로 한 프로토타입 일정입니다. 구조가
-            확정되면 실제 업무 일정 데이터로 치환하면 됩니다.
-          </p>
-        </div>
-
-        <div className="gantt-legend">
-          <span className="gantt-legend-item">
-            <i className="gantt-legend-dot gantt-legend-dot-done" />
-            완료
-          </span>
-          <span className="gantt-legend-item">
-            <i className="gantt-legend-dot gantt-legend-dot-active" />
-            진행 중
-          </span>
-          <span className="gantt-legend-item">
-            <i className="gantt-legend-dot gantt-legend-dot-planned" />
-            예정
-          </span>
+          <p className="section-label">gantt</p>
+          <h2>워크아이템 일정</h2>
         </div>
       </div>
 
-      <div className="gantt-scroll">
-        <div className="gantt-table">
-          <div className="gantt-grid gantt-grid-header" style={{ gridTemplateColumns }}>
-            <div className="gantt-label-cell">단계</div>
-            <div className="gantt-header-track">
-              <div
-                className="gantt-month-grid"
-                style={{ gridTemplateColumns: `repeat(${months.length}, minmax(120px, 1fr))` }}
-              >
-                {months.map((month) => (
-                  <div key={month.key} className="gantt-month-cell">
-                    {month.label}
-                  </div>
-                ))}
+      <div className="gantt-toolbar">
+        <div className="gantt-toolbar-copy">
+          <p className={`gantt-sync-note ${errorMessage ? "gantt-sync-note-error" : ""}`}>
+            {errorMessage
+              ? errorMessage
+              : socketStatus === "live"
+                ? "REST 스냅샷 + WebSocket으로 실시간 반영합니다."
+                : isVisible && isDocumentVisible
+                  ? "초기 스냅샷을 동기화하고 실시간 연결을 준비 중입니다."
+                  : "개요 화면을 보고 있을 때만 실시간 동기화합니다."}
+          </p>
+
+          <div className="gantt-toolbar-actions-row">
+            <div className="gantt-zoom-controls">
+              <button type="button" className="gantt-zoom-button" onClick={handleZoomOut}>
+                -
+              </button>
+              <div className="gantt-zoom-level">
+                <strong>{currentZoomLevel}</strong>
+                <span>Shift + wheel 좌우 스크롤</span>
               </div>
+              <button type="button" className="gantt-zoom-button" onClick={handleZoomIn}>
+                +
+              </button>
+            </div>
+
+            <div className="gantt-toolbar-actions-row">
+              <button type="button" className="gantt-fullscreen-button" onClick={handleFocusToday}>
+                오늘로 이동
+              </button>
+              <button
+                type="button"
+                className="gantt-fullscreen-button"
+                onClick={() => void handleToggleFullscreen()}
+              >
+                {isFullscreen ? "전체화면 종료" : "전체화면"}
+              </button>
             </div>
           </div>
 
-          {phases.map((phase) => (
-            <div key={phase.id} className="gantt-grid gantt-grid-row" style={{ gridTemplateColumns }}>
-              <div className="gantt-label-cell gantt-phase-copy">
-                <strong>{phase.label}</strong>
-                <span>{phase.owner}</span>
-                <p>{phase.note}</p>
-              </div>
+          {lastSyncedAt ? (
+            <span className="gantt-sync-meta">
+              마지막 동기화 {formatDateTimeLabel(lastSyncedAt)} · 워크아이템 {workItems.length}건 ·
+              연결 {dependencies.length}건
+              {isLinkSyncing ? " · 연결 저장 중" : ""}
+              {isSyncing ? " · 갱신 중" : ""}
+            </span>
+          ) : null}
+        </div>
 
-              <div className="gantt-track-cell">
-                <div
-                  className="gantt-track-grid"
-                  style={{ gridTemplateColumns: `repeat(${months.length}, minmax(120px, 1fr))` }}
-                >
-                  {months.map((month) => (
-                    <div key={`${phase.id}-${month.key}`} className="gantt-track-slot" />
-                  ))}
-                </div>
-                <div
-                  className={`gantt-bar gantt-bar-${phase.status}`}
-                  style={{
-                    left: `${phase.startOffsetPercent}%`,
-                    width: `${phase.widthPercent}%`,
-                  }}
-                >
-                  {phase.status === "done"
-                    ? "완료"
-                    : phase.status === "active"
-                      ? "진행 중"
-                      : "예정"}
-                </div>
-              </div>
+        <div className="gantt-legend-group">
+          {Object.entries(STATUS_META).map(([status, meta]) => (
+            <div key={status} className="gantt-legend-item">
+              <span
+                className="gantt-legend-dot"
+                style={{ backgroundColor: meta.barColor }}
+                aria-hidden="true"
+              />
+              <span>{meta.label}</span>
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="gantt-workspace-layout">
+        <div className="gantt-library-shell">
+          <div ref={containerRef} className="gantt-library-host" />
+          {!isLoading && !errorMessage && workItems.length === 0 ? (
+            <div className="gantt-empty-state">
+              <strong>아직 표시할 워크아이템이 없습니다.</strong>
+              <span>워크아이템이 추가되면 이 영역에 막대와 연결선이 함께 그려집니다.</span>
+            </div>
+          ) : null}
+        </div>
+
+        {/* <aside className="gantt-detail-panel" hidden aria-hidden="true">
+          <div className="gantt-detail-panel-header">
+            <p className="section-label">detail</p>
+            <h3>워크아이템 상세</h3>
+          </div>
+
+          {!selectedWorkItem ? (
+            <div className="gantt-detail-empty">
+              <strong>차트에서 워크아이템을 선택하세요.</strong>
+              <span>우측 패널에서 상세정보 확인, 수정, 삭제를 진행합니다.</span>
+            </div>
+          ) : null}
+
+          {selectedWorkItem && inspectorDraft ? (
+            <div className="gantt-detail-stack">
+              <div className="gantt-detail-summary">
+                <span className="meta-chip">{selectedWorkItem.code}</span>
+                <strong>{selectedWorkItem.title}</strong>
+                <p>{selectedWorkItem.description}</p>
+              </div>
+
+              {!isEditing ? (
+                <>
+                  <dl className="gantt-detail-grid">
+                    <div>
+                      <dt>상태</dt>
+                      <dd>{STATUS_META[selectedWorkItem.status].label}</dd>
+                    </div>
+                    <div>
+                      <dt>우선순위</dt>
+                      <dd>{selectedWorkItem.priorityLabel}</dd>
+                    </div>
+                    <div>
+                      <dt>담당자</dt>
+                      <dd>{selectedWorkItem.owner}</dd>
+                    </div>
+                    <div>
+                      <dt>생성자</dt>
+                      <dd>{selectedWorkItem.creatorName}</dd>
+                    </div>
+                    <div>
+                      <dt>시작일</dt>
+                      <dd>{formatDateLabel(selectedWorkItem.startDate)}</dd>
+                    </div>
+                    <div>
+                      <dt>종료일</dt>
+                      <dd>{formatDateLabel(selectedWorkItem.endDate)}</dd>
+                    </div>
+                    <div>
+                      <dt>진행률</dt>
+                      <dd>{selectedWorkItem.progress}%</dd>
+                    </div>
+                    <div>
+                      <dt>최근 수정</dt>
+                      <dd>{formatDateTimeLabel(selectedWorkItem.updatedAt)}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="gantt-detail-links">
+                    <div className="gantt-detail-links-block">
+                      <strong>선행 워크아이템</strong>
+                      {selectedPredecessors.length > 0 ? (
+                        <ul>
+                          {selectedPredecessors.map((item) => (
+                            <li key={item.id}>
+                              <span>{item.code}</span>
+                              <strong>{item.title}</strong>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p>연결된 선행 워크아이템이 없습니다.</p>
+                      )}
+                    </div>
+
+                    <div className="gantt-detail-links-block">
+                      <strong>후행 워크아이템</strong>
+                      {selectedSuccessors.length > 0 ? (
+                        <ul>
+                          {selectedSuccessors.map((item) => (
+                            <li key={item.id}>
+                              <span>{item.code}</span>
+                              <strong>{item.title}</strong>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p>연결된 후행 워크아이템이 없습니다.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="gantt-detail-actions">
+                    <button
+                      type="button"
+                      className="button button-primary button-inline"
+                      onClick={() => setIsEditing(true)}
+                    >
+                      수정
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-ghost button-inline"
+                      onClick={() => void handleDeleteSelectedWorkItem()}
+                      disabled={isDeleting}
+                    >
+                      {isDeleting ? "삭제 중..." : "삭제"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="overlay-form">
+                    <label className="field">
+                      <span>제목</span>
+                      <input
+                        value={inspectorDraft.title}
+                        onChange={(event) => handleInspectorChange("title", event.target.value)}
+                      />
+                    </label>
+
+                    <label className="field">
+                      <span>설명</span>
+                      <textarea
+                        value={inspectorDraft.description}
+                        onChange={(event) => handleInspectorChange("description", event.target.value)}
+                      />
+                    </label>
+
+                    <div className="field-row">
+                      <label className="field">
+                        <span>상태</span>
+                        <select
+                          value={inspectorDraft.status}
+                          onChange={(event) =>
+                            handleInspectorChange(
+                              "status",
+                              event.target.value as InspectorFormState["status"],
+                            )
+                          }
+                        >
+                          <option value="TODO">예정</option>
+                          <option value="IN_PROGRESS">진행 중</option>
+                          <option value="DONE">완료</option>
+                        </select>
+                      </label>
+
+                      <label className="field">
+                        <span>우선순위</span>
+                        <select
+                          value={inspectorDraft.priority}
+                          onChange={(event) =>
+                            handleInspectorChange(
+                              "priority",
+                              event.target.value as InspectorFormState["priority"],
+                            )
+                          }
+                        >
+                          <option value="LOW">낮음</option>
+                          <option value="MEDIUM">보통</option>
+                          <option value="HIGH">높음</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="field-row">
+                      <label className="field">
+                        <span>시작일</span>
+                        <input
+                          type="date"
+                          value={inspectorDraft.timelineStartDate}
+                          onChange={(event) => handleInspectorChange("timelineStartDate", event.target.value)}
+                        />
+                      </label>
+
+                      <label className="field">
+                        <span>종료일</span>
+                        <input
+                          type="date"
+                          value={inspectorDraft.timelineEndDate}
+                          onChange={(event) => handleInspectorChange("timelineEndDate", event.target.value)}
+                        />
+                      </label>
+                    </div>
+
+                    <label className="field">
+                      <span>담당자</span>
+                      <select
+                        value={inspectorDraft.assigneeUserId}
+                        onChange={(event) => handleInspectorChange("assigneeUserId", event.target.value)}
+                      >
+                        <option value="">미지정</option>
+                        {projectMembers.map((member) => (
+                          <option key={member.user_id} value={member.user_id}>
+                            {member.name} · {member.position_label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="gantt-detail-actions">
+                    <button
+                      type="button"
+                      className="button button-primary button-inline"
+                      onClick={() => void handleSaveSelectedWorkItem()}
+                      disabled={isSaving}
+                    >
+                      {isSaving ? "저장 중..." : "저장"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-secondary button-inline"
+                      onClick={() => {
+                        setInspectorDraft(buildInspectorFormState(selectedWorkItem));
+                        setIsEditing(false);
+                      }}
+                    >
+                      취소
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
+        </aside> */}
       </div>
     </section>
   );

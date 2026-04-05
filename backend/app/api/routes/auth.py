@@ -12,12 +12,13 @@ from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Header, HTTPException, Request as FastAPIRequest
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import create_engine, or_
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
 
 import app.models as models
 from app.core.config import get_settings
 from app.core.security import get_authenticated_user
+from app.database import get_session
 
 router = APIRouter()
 settings = get_settings()
@@ -25,15 +26,6 @@ settings = get_settings()
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
-
-
-def get_engine():
-    return create_engine(settings.database_url)
-
-
-def get_session() -> Session:
-    session_factory = sessionmaker(bind=get_engine())
-    return session_factory()
 
 
 def _frontend_redirect_url(path: str, *, auth: str | None = None, message: str | None = None) -> str:
