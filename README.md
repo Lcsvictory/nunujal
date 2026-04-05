@@ -36,19 +36,19 @@ uvicorn app.main:app --reload
 ### Database
 
 Use PostgreSQL and copy `backend/.env.example` to `backend/.env`.
+Set `DATABASE_URL` to your actual PostgreSQL server.
 
 ## Docker Dev Environment
 
 ### Why another compose file
 
-`docker-compose.yml` keeps the PostgreSQL-only setup.
 `docker-compose.dev.yml` reproduces the actual development environment with:
 
 - `frontend`: Vite dev server with hot reload
 - `backend`: FastAPI + Uvicorn reload server
-- `postgres`: local development database
 
-This split is better than forcing everything into one Dockerfile because this repository is not a single process app. The frontend, backend, and database have different runtimes and different reload behavior.
+This split is better than forcing everything into one Dockerfile because this repository is not a single process app. The frontend and backend have different runtimes and different reload behavior.
+The database is intentionally excluded from Docker so the backend can connect to the real PostgreSQL server you are already using.
 
 ### Files added for Docker development
 
@@ -59,17 +59,26 @@ This split is better than forcing everything into one Dockerfile because this re
 
 ### Build and run
 
-1. Start the full development environment.
+1. Create the backend environment file.
+
+```bash
+copy backend\.env.example backend\.env
+```
+
+2. Edit `backend/.env` and set `DATABASE_URL` to your real PostgreSQL server.
+
+If your database is running on the host machine itself, use `host.docker.internal` as the host value inside `DATABASE_URL`.
+
+3. Start the frontend and backend containers.
 
 ```bash
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-2. Open the services.
+4. Open the services.
 
 - Frontend: `http://localhost:5073`
 - Backend: `http://localhost:8028`
-- PostgreSQL: `localhost:5432`
 
 ### Stop the environment
 
@@ -77,7 +86,7 @@ docker compose -f docker-compose.dev.yml up --build
 docker compose -f docker-compose.dev.yml down
 ```
 
-If you also want to remove the database volume:
+If you also want to remove the frontend container volume cache:
 
 ```bash
 docker compose -f docker-compose.dev.yml down -v
@@ -88,4 +97,4 @@ docker compose -f docker-compose.dev.yml down -v
 - The dev compose mounts the source code into the containers, so code changes are reflected without rebuilding the image.
 - The frontend container uses polling to make file watching stable on Docker Desktop.
 - The backend container uses the same FastAPI reload flow as local development.
-- Dummy auth-related secrets are baked into `docker-compose.dev.yml` for practice. If you want to run Google login for real, replace them with actual values.
+- Backend secrets and DB connection are read from `backend/.env` instead of being hardcoded in the compose file.

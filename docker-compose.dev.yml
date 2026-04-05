@@ -1,22 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: nunujal-postgres-dev
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: nunujal
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-dev-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d nunujal"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   backend:
     build:
       context: ./backend
@@ -25,26 +7,15 @@ services:
     restart: unless-stopped
     working_dir: /app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8028 --reload
+    env_file:
+      - ./backend/.env
     environment:
-      APP_NAME: NunuJal API
-      APP_ENV: development
       FRONTEND_URL: http://localhost:5073
-      SERVER_PORT: "8028"
-      GOOGLE_REDIRECT_URI: http://localhost:8028/api/auth/google/callback
-      JWT_SECRET: dev-jwt-secret
-      JWT_EXPIRE_MINUTES: "1440"
-      SESSION_SECRET: dev-session-secret
-      GOOGLE_CLIENT_ID: dummy-google-client-id
-      GOOGLE_CLIENT_SECRET: dummy-google-client-secret
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/nunujal
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
       - ./backend:/app
     ports:
       - "8028:8028"
-    depends_on:
-      postgres:
-        condition: service_healthy
 
   frontend:
     build:
@@ -67,5 +38,4 @@ services:
       - backend
 
 volumes:
-  postgres-dev-data:
   frontend-node-modules:
