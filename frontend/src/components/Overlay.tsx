@@ -1,0 +1,81 @@
+import { useEffect, useId, type MouseEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+
+type OverlayProps = {
+  open: boolean;
+  title: string;
+  description: string;
+  onClose: () => void;
+  children: ReactNode;
+};
+
+export function Overlay({
+  open,
+  title,
+  description,
+  onClose,
+  children,
+}: OverlayProps) {
+  const titleId = useId();
+  const descriptionId = useId();
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, open]);
+
+  if (!open) {
+    return null;
+  }
+
+  const handleBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  };
+
+  return createPortal(
+    <div className="overlay-backdrop" onMouseDown={handleBackdropClick}>
+      <section
+        className="overlay-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+      >
+        <header className="overlay-header">
+          <div>
+            <h2 id={titleId}>{title}</h2>
+            <p id={descriptionId}>{description}</p>
+          </div>
+          <button
+            type="button"
+            className="button button-ghost button-square"
+            onClick={onClose}
+            aria-label="오버레이 닫기"
+          >
+            ×
+          </button>
+        </header>
+        <div className="overlay-body">{children}</div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
