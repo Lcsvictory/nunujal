@@ -153,25 +153,26 @@ function formatMonthScale(date: Date): string {
 }
 
 function centerTimelineOnDate(ganttInstance: GanttStatic, date: Date) {
-  const taskData = ganttInstance.$task_data as HTMLElement | undefined;
-  if (!taskData) {
+  const timelineArea = ganttInstance.$task as HTMLElement | undefined;
+  if (!timelineArea) {
     return;
   }
 
   const { y } = ganttInstance.getScrollState();
-  const targetX = ganttInstance.posFromDate(date) - taskData.clientWidth / 2;
+  const targetX = ganttInstance.posFromDate(date) - timelineArea.clientWidth / 2;
+  console.log(`Centering timeline on ${date.toISOString().split("T")[0]} at x=${targetX}, y=${y}`);
   ganttInstance.scrollTo(Math.max(targetX, 0), y);
 }
 
 function isDateVisible(ganttInstance: GanttStatic, date: Date): boolean {
-  const taskData = ganttInstance.$task_data as HTMLElement | undefined;
-  if (!taskData) {
+  const timelineArea = ganttInstance.$task as HTMLElement | undefined;
+  if (!timelineArea) {
     return false;
   }
 
   const { x } = ganttInstance.getScrollState();
   const targetX = ganttInstance.posFromDate(date);
-  return targetX >= x && targetX <= x + taskData.clientWidth;
+  return targetX >= x && targetX <= x + timelineArea.clientWidth;
 }
 
 function getWorkItemStatus(status: ProjectWorkItemSummary["status"]): WorkItemStatus {
