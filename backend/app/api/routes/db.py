@@ -230,6 +230,7 @@ def insert_dummy_data(session: Session) -> dict[str, int | str]:
         status="COMPLETED",
         input_summary="Includes activity logs and feedback review context.",
         disclaimer="Generated from dummy data only.",
+        created_at=now,
         completed_at=now,
     )
     session.add(analysis)
@@ -298,6 +299,7 @@ def insert_dummy_data(session: Session) -> dict[str, int | str]:
         request_status="UNDER_REVIEW",
         ai_impact_mode="REQUIRE_REANALYSIS",
         reviewed_by_user_id=leader.id,
+        created_at=now,
         reviewed_at=now,
         resolution_note="Reanalysis pending.",
     )
