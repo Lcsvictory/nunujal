@@ -1,16 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
-import { ApiError } from "../../lib/api";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { ApiError, logout } from "../../lib/api";
 import type { AuthUser } from "../auth/types";
-import { fetchProjects } from "./api";
+import { fetchProjects, deleteProject } from "./api";
 import { ProjectCreateOverlay } from "./ProjectCreateOverlay";
 import { ProjectJoinOverlay } from "./ProjectJoinOverlay";
 import type { JoinProjectResponse, ProjectSummary } from "./types";
 import { formatDateRange, formatJoinPolicy, formatProjectStatus } from "./utils";
+import { LogoutIcon } from "./ProjectWorkspaceIcons";
 
 type Notice = {
   tone: "success" | "error";
   message: string;
 } | null;
+
+type FilterType = "ALL" | "IN_PROGRESS" | "LEADER";
 
 type ProjectsPageProps = {
   onMoveToLogin: () => void;
@@ -27,9 +30,11 @@ export function ProjectsPage({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [requiresLogin, setRequiresLogin] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterType, setFilterType] = useState<FilterType>("ALL");
   const [notice, setNotice] = useState<Notice>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: ProjectSummary } | null>(null);
 
   const loadProjects = async () => {
     setIsLoading(true);
@@ -63,17 +68,25 @@ export function ProjectsPage({
   }, []);
 
   const filteredProjects = useMemo(() => {
-    const keyword = searchTerm.trim().toLowerCase();
-    if (!keyword) {
-      return projects;
+    let result = projects;
+
+    if (filterType === "IN_PROGRESS") {
+      result = result.filter((project) => project.status === "IN_PROGRESS");
+    } else if (filterType === "LEADER") {
+      result = result.filter((project) => project.my_membership.project_role === "LEADER");
     }
 
-    return projects.filter((project) => {
+    const keyword = searchTerm.trim().toLowerCase();
+    if (!keyword) {
+      return result;
+    }
+
+    return result.filter((project) => {
       const title = project.title.toLowerCase();
       const description = project.description.toLowerCase();
       return title.includes(keyword) || description.includes(keyword);
     });
-  }, [projects, searchTerm]);
+  }, [projects, searchTerm, filterType]);
 
   const projectStats = useMemo(() => {
     return {
@@ -102,8 +115,49 @@ export function ProjectsPage({
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (e) {
+      // If the logout request fails, move the user to login anyway.
+    } finally {
+      onMoveToLogin();
+    }
+  };
+
+  const handleContextMenu = (e: MouseEvent, project: ProjectSummary) => {
+    e.preventDefault();
+    setContextMenu({ x: e.pageX, y: e.pageY, project });
+  };
+
+  const handleDeleteProject = async (project: ProjectSummary) => {
+    setContextMenu(null);
+    if (project.my_membership.project_role !== "LEADER") {
+      alert("팀장만 프로젝트를 삭제할 수 있습니다.");
+      return;
+    }
+    if (!window.confirm(`정말 "${project.title}" 프로젝트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+      return;
+    }
+    
+    try {
+      await deleteProject(project.id);
+      setNotice({ tone: "success", message: "프로젝트가 삭제되었습니다." });
+      await loadProjects();
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        message: error instanceof Error ? error.message : "프로젝트 삭제 실패",
+      });
+    }
+  };
+
+  const closeContextMenu = () => {
+    if (contextMenu) setContextMenu(null);
+  };
+
   return (
-    <>
+    <div onClick={closeContextMenu}>
       <ProjectCreateOverlay
         open={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
@@ -120,14 +174,19 @@ export function ProjectsPage({
           <div className="projects-hero-copy">
             <span className="hero-badge">projects</span>
             <h1>프로젝트 선택</h1>
-            <p>
-              Figma Make에서 확인한 프로젝트 선택 화면을 현재 스택에 맞게 다시
-              구성했습니다. 생성과 참여는 별도 페이지로 보내지 않고, 이 화면
-              위에서 오버레이로 처리합니다.
-            </p>
+            <p>&nbsp;</p>
           </div>
 
           <div className="projects-hero-actions">
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={handleLogout}
+              style={{ whiteSpace: "nowrap", gap: "8px", display: "inline-flex", alignItems: "center" }}
+            >
+              로그아웃
+              <LogoutIcon /> 
+            </button>
             <button
               type="button"
               className="button button-secondary"
@@ -157,7 +216,7 @@ export function ProjectsPage({
           <section className="projects-main">
             <div className="surface-panel projects-toolbar">
               <label className="search-field">
-                <span className="search-label">프로젝트 찾기</span>
+                <span className="search-label">검색</span>
                 <input
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
@@ -166,9 +225,30 @@ export function ProjectsPage({
               </label>
 
               <div className="toolbar-pills">
-                <span className="meta-chip">전체 {projectStats.total}</span>
-                <span className="meta-chip">진행 중 {projectStats.inProgress}</span>
-                <span className="meta-chip">내가 팀장 {projectStats.leader}</span>
+                <button
+                  type="button"
+                  className={`meta-chip ${filterType === "ALL" ? "active" : ""}`}
+                  onClick={() => setFilterType("ALL")}
+                  style={{ cursor: "pointer", border: "none", background: filterType === "ALL" ? "rgba(124, 143, 191, 0.2)" : "var(--surface-color-2)" }}
+                >
+                  전체 {projectStats.total}
+                </button>
+                <button
+                  type="button"
+                  className={`meta-chip ${filterType === "IN_PROGRESS" ? "active" : ""}`}
+                  onClick={() => setFilterType("IN_PROGRESS")}
+                  style={{ cursor: "pointer", border: "none", background: filterType === "IN_PROGRESS" ? "rgba(124, 143, 191, 0.2)" : "var(--surface-color-2)" }}
+                >
+                  진행 중 {projectStats.inProgress}
+                </button>
+                <button
+                  type="button"
+                  className={`meta-chip ${filterType === "LEADER" ? "active" : ""}`}
+                  onClick={() => setFilterType("LEADER")}
+                  style={{ cursor: "pointer", border: "none", background: filterType === "LEADER" ? "rgba(124, 143, 191, 0.2)" : "var(--surface-color-2)" }}
+                >
+                  내가 팀장 {projectStats.leader}
+                </button>
               </div>
             </div>
 
@@ -188,9 +268,6 @@ export function ProjectsPage({
             {!isLoading && requiresLogin ? (
               <section className="surface-panel empty-panel">
                 <h2>로그인이 필요합니다</h2>
-                <p>
-                  프로젝트 목록과 참여 요청은 인증된 사용자 기준으로 동작합니다.
-                </p>
                 <button type="button" className="button button-primary" onClick={onMoveToLogin}>
                   로그인 화면으로 이동
                 </button>
@@ -216,6 +293,7 @@ export function ProjectsPage({
                       type="button"
                       className="project-card"
                       onClick={() => onOpenProject(project.id)}
+                      onContextMenu={(e) => handleContextMenu(e, project)}
                     >
                       <div className="project-card-top">
                         <span className="status-pill">
@@ -294,18 +372,38 @@ export function ProjectsPage({
                 </div>
               </div>
             </section>
-
-            <section className="surface-panel side-panel">
-              <p className="side-panel-label">참여 흐름</p>
-              <ul className="side-list">
-                <li>프로젝트 생성은 `POST /api/projects`를 호출합니다.</li>
-                <li>프로젝트 참여는 `POST /api/project-join-requests`를 호출합니다.</li>
-                <li>승인 정책이 자동이면 즉시 멤버가 되고, 아니면 요청 상태로 남습니다.</li>
-              </ul>
-            </section>
           </aside>
         </div>
       </div>
-    </>
+      
+      {contextMenu && (
+        <div
+          style={{
+            position: "absolute",
+            top: contextMenu.y,
+            left: contextMenu.x,
+            backgroundColor: "var(--surface-color-2)",
+            border: "1px solid var(--border-color)",
+            padding: "8px",
+            borderRadius: "var(--radius-md)",
+            boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
+            zIndex: 1000,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="button button-secondary"
+            style={{  display: "block", width: "100%", textAlign: "left", padding: "8px 12px" }}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDeleteProject(contextMenu.project);
+            }}
+          >
+            ❌ 프로젝트 삭제
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

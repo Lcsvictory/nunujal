@@ -25,6 +25,12 @@ export function fetchProjectDetail(projectId: number): Promise<ProjectDetailResp
   return apiRequest<ProjectDetailResponse>(`/api/projects/${projectId}`);
 }
 
+export function deleteProject(projectId: number): Promise<{ status: string; message: string }> {
+  return apiRequest<{ status: string; message: string }>(`/api/projects/${projectId}`, {
+    method: "DELETE",
+  });
+}
+
 export function fetchProjectWorkItems(projectId: number): Promise<ProjectWorkItemListResponse> {
   return apiRequest<ProjectWorkItemListResponse>(`/api/projects/${projectId}/work-items`);
 }

@@ -159,10 +159,11 @@ export type CreateProjectPayload = {
   description: string;
   start_date: string;
   end_date: string;
-  join_policy: "AUTO_APPROVE" | "LEADER_APPROVE";
-};
+  join_policy: "AUTO_APPROVE" | "LEADER_APPROVE";  status?: string;};
 
-export type UpdateProjectPayload = Partial<CreateProjectPayload>;
+export type UpdateProjectPayload = Partial<CreateProjectPayload> & {
+  status?: string;
+};
 
 export type CreateProjectResponse = {
   message: string;

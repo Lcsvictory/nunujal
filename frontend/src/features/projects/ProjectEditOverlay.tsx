@@ -23,6 +23,7 @@ export function ProjectEditOverlay({
     start_date: "",
     end_date: "",
     join_policy: "LEADER_APPROVE",
+    status: "PLANNING",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -35,6 +36,7 @@ export function ProjectEditOverlay({
         start_date: project.start_date,
         end_date: project.end_date,
         join_policy: project.join_policy as "AUTO_APPROVE" | "LEADER_APPROVE",
+        status: project.status,
       });
       setIsSubmitting(false);
       setErrorMessage(null);
@@ -132,21 +134,37 @@ export function ProjectEditOverlay({
           </label>
         </div>
 
-        <label className="field">
-          <span>참여 정책</span>
-          <select
-            value={formState.join_policy}
-            onChange={(event) =>
-              setFormState((current) => ({
-                ...current,
-                join_policy: event.target.value as UpdateProjectPayload["join_policy"],
-              }))
-            }
-          >
-            <option value="LEADER_APPROVE">팀장 승인 후 참여</option>
-            <option value="AUTO_APPROVE">코드 입력 즉시 참여</option>
-          </select>
-        </label>
+        <div className="field-row">
+          <label className="field">
+            <span>참여 정책</span>
+            <select
+              value={formState.join_policy}
+              onChange={(event) =>
+                setFormState((current) => ({
+                  ...current,
+                  join_policy: event.target.value as UpdateProjectPayload["join_policy"],
+                }))
+              }
+            >
+              <option value="LEADER_APPROVE">팀장 승인 후 참여</option>
+              <option value="AUTO_APPROVE">코드 입력 즉시 참여</option>
+            </select>
+          </label>
+
+          <label className="field">
+            <span>진행 상태</span>
+            <select
+              value={formState.status}
+              onChange={(event) =>
+                setFormState((current) => ({ ...current, status: event.target.value }))
+              }
+            >
+              <option value="PLANNING">계획중</option>
+              <option value="IN_PROGRESS">진행중</option>
+              <option value="DONE">완료됨</option>
+            </select>
+          </label>
+        </div>
 
         {errorMessage ? <p className="form-feedback form-feedback-error">{errorMessage}</p> : null}
 

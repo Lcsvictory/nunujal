@@ -102,7 +102,6 @@ export function ProjectJoinOverlay({
             <input
               value={joinCode}
               onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-              placeholder="예: TEAM42"
             />
           </label>
 
@@ -147,7 +146,6 @@ export function ProjectJoinOverlay({
           <input
             value={requestedPositionLabel}
             onChange={(event) => setRequestedPositionLabel(event.target.value)}
-            placeholder="예: 프론트엔드 개발"
           />
         </label>
 
@@ -157,7 +155,7 @@ export function ProjectJoinOverlay({
             value={requestMessage}
             onChange={(event) => setRequestMessage(event.target.value)}
             rows={4}
-            placeholder="팀장에게 전달할 간단한 메모가 있다면 적습니다."
+
           />
         </label>
 

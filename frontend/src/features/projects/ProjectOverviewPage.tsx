@@ -1,10 +1,10 @@
 import { ProjectMembersPage } from "./ProjectMembersPage";
 import { ProjectTasksPage } from "./ProjectTasksPage";
 import { useEffect, useMemo, useState } from "react";
-import { ApiError, logout } from "../../lib/api";
+import { ApiError, logout, apiJsonRequest } from "../../lib/api";
 import { navigate } from "../../lib/router";
 import type { AuthUser } from "../auth/types";
-import { fetchProjectDetail } from "./api";
+import { fetchProjectDetail, deleteProject } from "./api";
 import { ProjectGanttChart } from "./ProjectGanttChart";
 import { ProjectEditOverlay } from "./ProjectEditOverlay";
 import {
@@ -146,6 +146,20 @@ export function ProjectOverviewPage({
     }
   };
 
+  const handleDeleteProject = async () => {
+    if (!project) return;
+    if (!window.confirm(`정말 "${project.title}" 프로젝트를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+      return;
+    }
+
+    try {
+      await deleteProject(project.id);
+      onMoveToProjects();
+    } catch (error) {
+      alert("프로젝트를 삭제하는 데 실패했습니다.");
+    }
+  };
+
   const renderOverviewSection = () => {
     if (!project) {
       return null;
@@ -172,13 +186,23 @@ export function ProjectOverviewPage({
             </div>
 
             {project.my_membership.project_role === "LEADER" && (
-              <button 
-                type="button" 
-                className="button button-primary workspace-inline-button"
-                onClick={() => setIsEditProjectOpen(true)}
-              >
-                수정
-              </button>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button 
+                  type="button" 
+                  className="button button-primary workspace-inline-button"
+                  onClick={() => setIsEditProjectOpen(true)}
+                >
+                  수정
+                </button>
+                <button 
+                  type="button" 
+                  className="button button-ghost workspace-inline-button"
+                  onClick={handleDeleteProject}
+                  style={{ color: "var(--status-danger)" }}
+                >
+                  삭제
+                </button>
+              </div>
             )}
           </div>
 
@@ -304,7 +328,14 @@ export function ProjectOverviewPage({
           </div>
         </div>
 
-        <div className="workspace-topbar-actions">
+        <div className="workspace-topbar-actions" style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <button
+            type="button"
+            className="button button-ghost"
+            onClick={onMoveToProjects}
+          >
+            ← 프로젝트 목록으로
+          </button>
           <button
             type="button"
             className="workspace-profile-trigger"

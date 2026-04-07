@@ -258,9 +258,6 @@ textarea {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #f97316 0%, #facc15 100%);
-  color: #10213a;
-  font-weight: 800;
 }
 
 .login-divider {
