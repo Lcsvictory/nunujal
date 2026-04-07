@@ -24,6 +24,7 @@ class CreateProjectRequest(BaseModel):
     start_date: date
     end_date: date
     join_policy: str = "LEADER_APPROVE"
+    status: str = "PLANNING"
 
 
 class UpdateProjectRequest(BaseModel):
@@ -520,7 +521,7 @@ def create_project(
             join_code_expires_at=now + timedelta(days=14),
             start_date=payload.start_date,
             end_date=payload.end_date,
-            status="PLANNING",
+            status=payload.status,
         )
         session.add(project)
         session.flush()
@@ -1039,6 +1040,34 @@ def update_project(
             "status": "success",
             "project_id": project_id,
             "message": "Project updated successfully.",
+        }
+    finally:
+        session.close()
+
+
+@router.delete("/{project_id}", summary="Delete project")
+def delete_project(
+    project_id: int,
+    request: FastAPIRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    session = get_session()
+    try:
+        current_user = get_authenticated_user(session, request, authorization)
+        project, membership = _require_project_access(session, project_id, current_user.id)
+        
+        if membership.project_role != "LEADER":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="팀장만 프로젝트를 삭제할 수 있습니다."
+            )
+            
+        session.delete(project)
+        session.commit()
+        return {
+            "status": "success",
+            "project_id": project_id,
+            "message": "Project deleted successfully.",
         }
     finally:
         session.close()
