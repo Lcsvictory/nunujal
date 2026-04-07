@@ -1,0 +1,207 @@
+.p-tasks-board-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--radius-lg);
+  gap: var(--radius-lg);
+}
+
+.p-tasks-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.p-tasks-header p {
+  margin: 4px 0 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.p-tasks-board {
+  display: flex;
+  flex: 1;
+  gap: 16px;
+  overflow-x: auto;
+  align-items: flex-start;
+}
+
+.p-tasks-column {
+  flex: 0 0 300px;
+  background: var(--secondary);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 100%;
+}
+
+.p-tasks-column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px;
+}
+
+.p-tasks-column-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.p-tasks-column-count {
+  background: rgba(104, 116, 143, 0.15);
+  color: var(--muted);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.p-tasks-column-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 50px;
+}
+
+.p-tasks-sortable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 100px;
+}
+
+.p-tasks-column-footer {
+  margin-top: auto;
+}
+
+.p-tasks-add-btn {
+  width: 100%;
+  padding: 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+}
+
+.p-tasks-add-btn:hover {
+  background: rgba(104, 116, 143, 0.1);
+  color: var(--text);
+}
+
+.p-tasks-add-input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--panel-border);
+  outline: none;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.p-tasks-add-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(35, 83, 255, 0.1);
+}
+
+.p-task-card {
+  background: var(--panel-strong);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-soft);
+  cursor: grab;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid transparent;
+  transition: box-shadow 0.2s;
+}
+
+.p-task-card:hover {
+  box-shadow: 0 4px 12px rgba(31, 48, 91, 0.08);
+}
+
+.p-task-card.is-dragging {
+  opacity: 0.8;
+  transform: scale(1.02);
+  box-shadow: var(--shadow-strong);
+  cursor: grabbing;
+}
+
+.p-task-card-title {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.p-task-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.p-task-priority {
+  font-size: 0.85rem;
+  font-weight: bold;
+}
+
+.p-prio.high { color: var(--danger); }
+.p-prio.medium { color: var(--primary); }
+.p-prio.low { color: var(--success); }
+
+.p-task-assignee {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.p-tasks-context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--panel-strong);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow-strong);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+}
+
+.p-tasks-context-menu button {
+  padding: 8px 12px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--text);
+}
+
+.p-tasks-context-menu button:hover {
+  background: var(--secondary);
+}
+
+.p-tasks-context-menu button.danger {
+  color: var(--danger);
+}
+

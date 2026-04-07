@@ -662,7 +662,7 @@ export function ProjectGanttChart({
     ganttInstance.config.readonly = false;
     ganttInstance.config.root_id = 0;
     ganttInstance.config.open_tree_initially = true;
-    ganttInstance.config.show_progress = true;
+    ganttInstance.config.show_progress = false;
     ganttInstance.config.drag_move = false;
     ganttInstance.config.drag_resize = false;
     ganttInstance.config.drag_progress = false;
@@ -980,7 +980,6 @@ export function ProjectGanttChart({
         markerIdRef.current = null;
       }
       ganttInstance.clearAll();
-      container.innerHTML = "";
       ganttRef.current = null;
     };
   }, [today]);

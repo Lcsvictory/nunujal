@@ -607,6 +607,24 @@ def create_project_work_item(
             payload.timeline_end_date,
             status=status_value,
         )
+        
+        activity = models.Activity(
+            project_id=project.id,
+            work_item_id=work_item.id,
+            actor_user_id=current_user.id,
+            activity_type="CONTENT_EDITING",
+            contribution_phase="PREPARATION",
+            title=f"'{work_item.title}' 추가됨",
+            content="새 워크아이템이 생성되었습니다.",
+            source_type="SYSTEM_IMPORTED",
+            credibility_level="SYSTEM_IMPORTED",
+            review_state="NORMAL",
+            occurred_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(activity)
+        
         session.commit()
         session.refresh(work_item)
 
@@ -670,7 +688,25 @@ def update_project_work_item(
             next_timeline_end,
             status=status_value,
         )
-        work_item.updated_at = datetime.now()
+        now = datetime.now()
+        work_item.updated_at = now
+
+        activity = models.Activity(
+            project_id=project_id,
+            work_item_id=work_item.id,
+            actor_user_id=current_user.id,
+            activity_type="CONTENT_EDITING",
+            contribution_phase="REFINEMENT",
+            title=f"'{work_item.title}' 업데이트됨",
+            content="워크아이템의 정보가 변경되었습니다.",
+            source_type="SYSTEM_IMPORTED",
+            credibility_level="SYSTEM_IMPORTED",
+            review_state="NORMAL",
+            occurred_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(activity)
 
         session.commit()
         session.refresh(work_item)
@@ -699,6 +735,24 @@ def delete_project_work_item(
         current_user = get_authenticated_user(session, request, authorization)
         _project, _membership = _require_project_access(session, project_id, current_user.id)
         work_item = _require_project_work_item(session, project_id, work_item_id)
+        
+        now = datetime.now()
+        activity = models.Activity(
+            project_id=project_id,
+            work_item_id=None,
+            actor_user_id=current_user.id,
+            activity_type="CONTENT_EDITING",
+            contribution_phase="FINALIZATION",
+            title=f"'{work_item.title}' 삭제됨",
+            content="워크아이템이 프로젝트에서 삭제되었습니다.",
+            source_type="SYSTEM_IMPORTED",
+            credibility_level="SYSTEM_IMPORTED",
+            review_state="NORMAL",
+            occurred_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(activity)
 
         session.delete(work_item)
         session.commit()
@@ -959,13 +1013,35 @@ def get_project(
 
 
 @router.patch("/{project_id}", summary="Update project")
-def update_project(project_id: int, payload: UpdateProjectRequest) -> dict[str, object]:
-    return {
-        "status": "not_implemented",
-        "message": "PATCH /api/projects/{project_id} will update project metadata.",
-        "project_id": project_id,
-        "payload": payload.model_dump(exclude_none=True),
-    }
+def update_project(
+    project_id: int, 
+    payload: UpdateProjectRequest,
+    request: FastAPIRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    session = get_session()
+    try:
+        current_user = get_authenticated_user(session, request, authorization)
+        project, membership = _require_project_access(session, project_id, current_user.id)
+        
+        if membership.project_role != "LEADER":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="팀장만 프로젝트 정보를 수정할 수 있습니다."
+            )
+            
+        update_data = payload.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(project, key, value)
+            
+        session.commit()
+        return {
+            "status": "success",
+            "project_id": project_id,
+            "message": "Project updated successfully.",
+        }
+    finally:
+        session.close()
 
 
 @router.get("/join-preview/{join_code}", summary="Preview project by join code")

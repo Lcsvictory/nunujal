@@ -1,10 +1,12 @@
 import { ProjectMembersPage } from "./ProjectMembersPage";
+import { ProjectTasksPage } from "./ProjectTasksPage";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, logout } from "../../lib/api";
 import { navigate } from "../../lib/router";
 import type { AuthUser } from "../auth/types";
 import { fetchProjectDetail } from "./api";
 import { ProjectGanttChart } from "./ProjectGanttChart";
+import { ProjectEditOverlay } from "./ProjectEditOverlay";
 import {
   CollapseIcon,
   ContributionIcon,
@@ -62,13 +64,10 @@ export function ProjectOverviewPage({
   const [activeSection, setActiveSection] = useState<WorkspaceSection>("overview");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const currentSection = activeSection;
 
-  useEffect(() => {
-    setActiveSection("overview");
-  }, [projectId]);
-
-  useEffect(() => {
+  const loadProject = async () => {
     if (projectId === null) {
       setProject(null);
       setCurrentUser(null);
@@ -77,42 +76,31 @@ export function ProjectOverviewPage({
       return;
     }
 
-    let isMounted = true;
+    setErrorMessage(null);
 
-    const loadProject = async () => {
-      setIsLoading(true);
-      setErrorMessage(null);
+    try {
+      const response = await fetchProjectDetail(projectId);
+      setProject(response.project);
+      setCurrentUser(response.current_user);
+    } catch (error) {
+      setProject(null);
+      setCurrentUser(null);
+      setErrorMessage(
+        error instanceof ApiError
+          ? error.message
+          : "프로젝트 개요를 불러오지 못했습니다.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-      try {
-        const response = await fetchProjectDetail(projectId);
-        if (!isMounted) {
-          return;
-        }
-        setProject(response.project);
-        setCurrentUser(response.current_user);
-      } catch (error) {
-        if (!isMounted) {
-          return;
-        }
-        setProject(null);
-        setCurrentUser(null);
-        setErrorMessage(
-          error instanceof ApiError
-            ? error.message
-            : "프로젝트 개요를 불러오지 못했습니다.",
-        );
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
+  useEffect(() => {
+    setActiveSection("overview");
+  }, [projectId]);
 
+  useEffect(() => {
     void loadProject();
-
-    return () => {
-      isMounted = false;
-    };
   }, [projectId]);
 
   const completionRate = project?.overview.completion_rate ?? 0;
@@ -139,9 +127,9 @@ export function ProjectOverviewPage({
         note: "완료 업무 기준",
       },
       {
-        label: "참여 정책",
-        value: formatJoinPolicy(project.join_policy),
-        note: `참여 코드 ${project.join_code}`,
+        label: "참여 코드",
+        value: project.join_code,
+        note: `참여 정책: ${formatJoinPolicy(project.join_policy)}`,
       },
     ];
   }, [project]);
@@ -172,29 +160,6 @@ export function ProjectOverviewPage({
           projectMembers={project.members}
           isVisible={currentSection === "overview"}
         />
-        {/*
-        <Suspense
-          fallback={
-            <section className="surface-panel gantt-card">
-              <div className="section-heading">
-                <div>
-                  <p className="section-label">gantt</p>
-                  <h2>워크아이템 일정을 불러오는 중입니다.</h2>
-                </div>
-              </div>
-              <div className="skeleton-line skeleton-line-short" />
-              <div className="skeleton-line" />
-              <div className="skeleton-line" />
-            </section>
-          }
-        >
-          <LazyProjectGanttChart
-            startDate={project.start_date}
-            endDate={project.end_date}
-            completionRate={completionRate}
-          />
-        </Suspense>
-        */}
 
         <section className="surface-panel workspace-project-card">
           <div className="workspace-project-card-top">
@@ -206,9 +171,15 @@ export function ProjectOverviewPage({
               <p>{project.description || "프로젝트 설명이 아직 입력되지 않았습니다."}</p>
             </div>
 
-            <button type="button" className="button button-primary workspace-inline-button">
-              수정
-            </button>
+            {project.my_membership.project_role === "LEADER" && (
+              <button 
+                type="button" 
+                className="button button-primary workspace-inline-button"
+                onClick={() => setIsEditProjectOpen(true)}
+              >
+                수정
+              </button>
+            )}
           </div>
 
           <div className="workspace-summary-grid">
@@ -303,6 +274,10 @@ export function ProjectOverviewPage({
     
     if (activeSection === "members" && project) {
       return <ProjectMembersPage project={project} />;
+    }
+
+    if (activeSection === "tasks" && project) {
+      return <ProjectTasksPage project={project} />;
     }
 
     return (
@@ -448,6 +423,13 @@ export function ProjectOverviewPage({
           ) : null}
         </main>
       </div>
+
+      <ProjectEditOverlay
+        open={isEditProjectOpen}
+        project={project}
+        onClose={() => setIsEditProjectOpen(false)}
+        onUpdated={loadProject}
+      />
     </div>
   );
 }

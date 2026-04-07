@@ -11,6 +11,7 @@ import type {
   ProjectListResponse,
   ProjectWorkItemListResponse,
   ProjectMemberSummary,
+  UpdateProjectPayload,
   UpdateProjectWorkItemPayload,
   WorkItemDependencyMutationResponse,
   WorkItemMutationResponse,
@@ -88,6 +89,17 @@ export function getProjectWorkItemsWebSocketUrl(projectId: number): string {
 
 export function createProject(payload: CreateProjectPayload): Promise<CreateProjectResponse> {
   return apiJsonRequest<CreateProjectResponse>("/api/projects", "POST", payload);
+}
+
+export function updateProject(
+  projectId: number,
+  payload: UpdateProjectPayload,
+): Promise<{ status: string; message: string; project_id: number; payload: object }> {
+  return apiJsonRequest<{ status: string; message: string; project_id: number; payload: object }>(
+    `/api/projects/${projectId}`,
+    "PATCH",
+    payload,
+  );
 }
 
 export function previewProjectByJoinCode(joinCode: string): Promise<JoinPreviewResponse> {

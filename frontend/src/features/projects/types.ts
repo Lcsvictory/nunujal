@@ -162,6 +162,8 @@ export type CreateProjectPayload = {
   join_policy: "AUTO_APPROVE" | "LEADER_APPROVE";
 };
 
+export type UpdateProjectPayload = Partial<CreateProjectPayload>;
+
 export type CreateProjectResponse = {
   message: string;
   project: ProjectSummary;
