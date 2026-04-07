@@ -313,13 +313,20 @@ def _apply_work_item_schedule(
             detail="Work item start date cannot be earlier than the creation date in the current schema.",
         )
 
-    work_item.started_at = _combine_work_date(timeline_start_date)
+    started_at = _combine_work_date(timeline_start_date)
+    if started_at < work_item.created_at:
+        started_at = work_item.created_at
+    work_item.started_at = started_at
+
     work_item.due_date = timeline_end_date
-    work_item.completed_at = (
-        _combine_work_date(timeline_end_date, end_of_day=True)
-        if status == "DONE"
-        else None
-    )
+
+    if status == "DONE":
+        completed_at = _combine_work_date(timeline_end_date, end_of_day=True)
+        if completed_at < started_at:
+            completed_at = started_at
+        work_item.completed_at = completed_at
+    else:
+        work_item.completed_at = None
 
 
 def _ensure_assignable_member(
@@ -1022,12 +1029,40 @@ def regenerate_join_code(project_id: int) -> dict[str, object]:
 
 
 @router.get("/{project_id}/members", summary="List project members")
-def list_project_members(project_id: int) -> dict[str, object]:
-    return {
-        "status": "not_implemented",
-        "message": "GET /api/projects/{project_id}/members will list project members.",
-        "project_id": project_id,
-    }
+def list_project_members(
+    project_id: int,
+    request: FastAPIRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    session = get_session()
+    try:
+        current_user = get_authenticated_user(session, request, authorization)
+        _project, _membership = _require_project_access(session, project_id, current_user.id)
+        
+        members = (
+            session.query(models.ProjectMember, models.AppUser)
+            .join(models.AppUser, models.ProjectMember.user_id == models.AppUser.id)
+            .filter(
+                models.ProjectMember.project_id == project_id,
+                models.ProjectMember.left_at.is_(None)
+            )
+            .all()
+        )
+        
+        items = []
+        for mem, user in members:
+            items.append({
+                "project_member_id": mem.id,
+                "user_id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "project_role": mem.project_role,
+                "position_label": mem.position_label,
+            })
+            
+        return {"items": items}
+    finally:
+        session.close()
 
 
 @router.patch("/{project_id}/members/{member_id}", summary="Update project member")
@@ -1056,12 +1091,46 @@ def remove_project_member(project_id: int, member_id: int) -> dict[str, object]:
 
 
 @router.get("/{project_id}/join-requests", summary="List project join requests")
-def list_project_join_requests(project_id: int) -> dict[str, object]:
-    return {
-        "status": "not_implemented",
-        "message": "GET /api/projects/{project_id}/join-requests will list pending join requests for the leader.",
-        "project_id": project_id,
-    }
+def list_project_join_requests(
+    project_id: int,
+    request: FastAPIRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    session = get_session()
+    try:
+        current_user = get_authenticated_user(session, request, authorization)
+        _project, membership = _require_project_access(session, project_id, current_user.id)
+        if membership.project_role != "LEADER":
+            raise HTTPException(status_code=403, detail="Only LEADER can view join requests.")
+
+        requests = (
+            session.query(models.ProjectJoinRequest, models.AppUser)
+            .join(models.AppUser, models.ProjectJoinRequest.requester_user_id == models.AppUser.id)
+            .filter(
+                models.ProjectJoinRequest.project_id == project_id,
+                models.ProjectJoinRequest.request_status == 'PENDING',
+            )
+            .order_by(models.ProjectJoinRequest.created_at.desc())
+            .all()
+        )
+
+        items = []
+        for req, user in requests:
+            items.append({
+                "id": req.id,
+                "project_id": req.project_id,
+                "requester_user_id": req.requester_user_id,
+                "requester_name": user.name,
+                "requester_email": user.email,
+                "request_message": req.request_message,
+                "requested_position_label": req.requested_position_label,
+                "request_status": req.request_status,
+                "created_at": f"{req.created_at.isoformat()}Z" if req.created_at else None,
+            })
+
+        return {"items": items}
+    finally:
+        session.close()
 
 
 @router.patch("/{project_id}/join-requests/{request_id}", summary="Review project join request")
@@ -1069,11 +1138,75 @@ def review_project_join_request(
     project_id: int,
     request_id: int,
     payload: ReviewProjectJoinRequest,
+    request: FastAPIRequest,
+    authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
-    return {
-        "status": "not_implemented",
-        "message": "PATCH /api/projects/{project_id}/join-requests/{request_id} will approve or reject a join request.",
-        "project_id": project_id,
-        "request_id": request_id,
-        "payload": payload.model_dump(exclude_none=True),
-    }
+    session = get_session()
+    try:
+        current_user = get_authenticated_user(session, request, authorization)
+        _project, membership = _require_project_access(session, project_id, current_user.id)
+        if membership.project_role != "LEADER":
+            raise HTTPException(status_code=403, detail="Only LEADER can review join requests.")
+
+        join_request = (
+            session.query(models.ProjectJoinRequest)
+            .filter(
+                models.ProjectJoinRequest.id == request_id,
+                models.ProjectJoinRequest.project_id == project_id,
+                models.ProjectJoinRequest.request_status == 'PENDING',
+            )
+            .first()
+        )
+        if not join_request:
+            raise HTTPException(status_code=404, detail="Join request not found or already reviewed.")
+
+        now = func.now()
+        status_value = payload.request_status.upper()
+        if status_value not in ('APPROVED', 'REJECTED'):
+            raise HTTPException(status_code=400, detail="Invalid request status. Must be APPROVED or REJECTED.")
+
+        join_request.request_status = status_value
+        join_request.reviewed_by_user_id = current_user.id
+        join_request.reviewed_at = now
+        join_request.review_note = payload.review_note
+
+        if status_value == "APPROVED":
+            project_role = payload.reviewed_project_role.upper() if payload.reviewed_project_role else "MEMBER"
+            if project_role not in ("LEADER", "MEMBER"):
+                project_role = "MEMBER"
+            position_label = payload.reviewed_position_label.strip() if payload.reviewed_position_label else (join_request.requested_position_label or "팀원")
+
+            join_request.reviewed_project_role = project_role
+            join_request.reviewed_position_label = position_label
+
+            # Check if user already member
+            existing_member = session.query(models.ProjectMember).filter(
+                models.ProjectMember.project_id == project_id,
+                models.ProjectMember.user_id == join_request.requester_user_id,
+                models.ProjectMember.left_at.is_(None)
+            ).first()
+
+            if not existing_member:
+                new_member = models.ProjectMember(
+                    project_id=project_id,
+                    user_id=join_request.requester_user_id,
+                    project_role=project_role,
+                    position_label=position_label,
+                    joined_at=now,
+                )
+                session.add(new_member)
+            else:
+                # If they somehow are already members and requested again, just resolve the request.
+                pass
+        
+        session.commit()
+        return {"status": "success", "message": f"Join request {status_value.lower()}."}
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
+

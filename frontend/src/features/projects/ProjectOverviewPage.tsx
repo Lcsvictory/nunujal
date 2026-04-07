@@ -1,3 +1,4 @@
+import { ProjectMembersPage } from "./ProjectMembersPage";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, logout } from "../../lib/api";
 import { navigate } from "../../lib/router";
@@ -299,6 +300,10 @@ export function ProjectOverviewPage({
     };
 
     const title = sectionTitleMap[activeSection as Exclude<WorkspaceSection, "overview">];
+    
+    if (activeSection === "members" && project) {
+      return <ProjectMembersPage project={project} />;
+    }
 
     return (
       <section className="surface-panel workspace-placeholder-panel">

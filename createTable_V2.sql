@@ -193,6 +193,35 @@ CREATE TABLE work_item (
         )
 );
 
+CREATE TABLE work_item_dependency (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    project_id BIGINT NOT NULL,
+    predecessor_work_item_id BIGINT NOT NULL,
+    successor_work_item_id BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_work_item_dependency_project
+        FOREIGN KEY (project_id)
+        REFERENCES project(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_work_item_dependency_predecessor
+        FOREIGN KEY (predecessor_work_item_id)
+        REFERENCES work_item(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_work_item_dependency_successor
+        FOREIGN KEY (successor_work_item_id)
+        REFERENCES work_item(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT uq_work_item_dependency_pair
+        UNIQUE (project_id, predecessor_work_item_id, successor_work_item_id),
+
+    CONSTRAINT chk_work_item_dependency_not_self
+        CHECK (predecessor_work_item_id <> successor_work_item_id)
+);
+
 CREATE TABLE activity (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 

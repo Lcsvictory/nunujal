@@ -156,6 +156,8 @@ def insert_dummy_data(session: Session) -> dict[str, int | str]:
         status="TODO",
         priority="MEDIUM",
         due_date=date(2026, 4, 15),
+        started_at=now - timedelta(days=1),
+        created_at=now - timedelta(days=2),
     )
     session.add_all([work_item_1, work_item_2])
     session.flush()

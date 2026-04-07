@@ -10,6 +10,7 @@ import type {
   ProjectDetailResponse,
   ProjectListResponse,
   ProjectWorkItemListResponse,
+  ProjectMemberSummary,
   UpdateProjectWorkItemPayload,
   WorkItemDependencyMutationResponse,
   WorkItemMutationResponse,
@@ -41,7 +42,7 @@ export function createProjectWorkItem(
 export function updateProjectWorkItem(
   projectId: number,
   workItemId: number,
-  payload: UpdateProjectWorkItemPayload,
+  payload: UpdateProjectWorkItemPayload
 ): Promise<WorkItemMutationResponse> {
   return apiJsonRequest<WorkItemMutationResponse>(
     `/api/projects/${projectId}/work-items/${workItemId}`,
@@ -97,4 +98,43 @@ export function createProjectJoinRequest(
   payload: JoinProjectPayload,
 ): Promise<JoinProjectResponse> {
   return apiJsonRequest<JoinProjectResponse>("/api/project-join-requests", "POST", payload);
+}
+
+export function fetchProjectMembers(projectId: number): Promise<{ items: ProjectMemberSummary[] }> {
+  return apiRequest<{ items: ProjectMemberSummary[] }>(`/api/projects/${projectId}/members`);
+}
+
+type ProjectJoinRequestItem = {
+  id: number;
+  project_id: number;
+  requester_user_id: number;
+  requester_name: string;
+  requester_email: string;
+  request_message: string;
+  requested_position_label: string;
+  request_status: string;
+  created_at: string;
+};
+
+export function fetchProjectJoinRequests(projectId: number): Promise<{ items: ProjectJoinRequestItem[] }> {
+  return apiRequest<{ items: ProjectJoinRequestItem[] }>(`/api/projects/${projectId}/join-requests`);
+}
+
+export type ReviewProjectJoinRequestPayload = {
+  request_status: "APPROVED" | "REJECTED";
+  reviewed_project_role?: "LEADER" | "MEMBER";
+  reviewed_position_label?: string;
+  review_note?: string;
+};
+
+export function reviewProjectJoinRequest(
+  projectId: number,
+  requestId: number,
+  payload: ReviewProjectJoinRequestPayload
+): Promise<{ status: string; message: string }> {
+  return apiJsonRequest<{ status: string; message: string }>(
+    `/api/projects/${projectId}/join-requests/${requestId}`,
+    "PATCH",
+    payload
+  );
 }
