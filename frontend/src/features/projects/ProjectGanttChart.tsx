@@ -11,6 +11,8 @@ import {
   getProjectWorkItemsWebSocketUrl,
   updateProjectWorkItem,
 } from "./api";
+import { ProjectTaskCreateOverlay } from "./ProjectTaskCreateOverlay";
+import { ProjectTaskEditOverlay } from "./ProjectTaskEditOverlay";
 import type {
   CreateProjectWorkItemPayload,
   ProjectMemberSummary,
@@ -343,6 +345,8 @@ export function ProjectGanttChart({
   const [isLinkSyncing, setIsLinkSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<ProjectWorkItemSummary | null>(null);
   const [isDocumentVisible, setIsDocumentVisible] = useState(
     () => document.visibilityState === "visible",
   );
@@ -821,11 +825,31 @@ export function ProjectGanttChart({
         ],
       })),
     });
+    ganttWithButtons.$click = ganttWithButtons.$click || {};
+    ganttWithButtons.$click.buttons = ganttWithButtons.$click.buttons || {};
     ganttWithButtons.$click.buttons.edit = (e: any, id?: any) => {
       const taskId = id || (typeof e === "object" ? ganttInstance.locate(e) || ganttInstance.getSelectedId() : e);
       if (taskId != null) {
-        console.log(`Opening lightbox for task ${taskId}`);
-        ganttInstance.showLightbox(String(taskId));
+        const item = workItemMapRef.current.get(String(taskId));
+        if (item) {
+          setEditingTask({
+            id: item.numericId,
+            title: item.title,
+            description: item.description === "설명이 아직 없습니다." ? "" : item.description,
+            status: item.status === "done" ? "DONE" : item.status === "in_progress" ? "IN_PROGRESS" : "TODO",
+            priority: item.priority,
+            due_date: null,
+            started_at: null,
+            completed_at: null,
+            created_at: "",
+            updated_at: item.updatedAt,
+            timeline_start_date: item.startDate,
+            timeline_end_date: item.endDate,
+            duration_days: item.durationDays,
+            creator: { id: -1, name: item.creatorName },
+            assignee: item.assigneeUserId ? { id: item.assigneeUserId, name: item.owner } : null,
+          } as ProjectWorkItemSummary);
+        }
       }
       return false;
     };
@@ -1236,15 +1260,7 @@ export function ProjectGanttChart({
                 type="button"
                 className="gantt-fullscreen-button"
                 // style={{ backgroundColor: "var(--color-primary-600)", color: "#a13d3d", border: "none" }}
-                onClick={() => {
-                  if (ganttRef.current) {
-                    ganttRef.current.createTask({
-                      text: "새 할일",
-                      start_date: new Date(),
-                      duration: 1,
-                    }, 0);
-                  }
-                }}
+                onClick={() => setIsCreateOpen(true)}
               >
                 + 할일 등록
               </button>
@@ -1296,6 +1312,27 @@ export function ProjectGanttChart({
           ) : null}
         </div>
       </div>
+      <ProjectTaskCreateOverlay
+        open={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        projectId={projectId}
+        initialStatus="TODO"
+        onCreated={() => {
+          setIsCreateOpen(false);
+          // Snapshot polling isn't triggered manually, but maybe we can wait
+          // or we just rely on the WebSocket or the next polling cycle.
+          // Since the server sends socket messages, it will update automatically.
+        }}
+      />
+      <ProjectTaskEditOverlay
+        open={editingTask !== null}
+        onClose={() => setEditingTask(null)}
+        projectId={projectId}
+        task={editingTask}
+        onUpdated={() => {
+          setEditingTask(null);
+        }}
+      />
     </section>
   );
 }

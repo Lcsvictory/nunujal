@@ -50,11 +50,20 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
   const [loading, setLoading] = useState(true);
   const [createStatus, setCreateStatus] = useState<TaskStatus | null>(null);
   const [editingTask, setEditingTask] = useState<ProjectWorkItemSummary | null>(null);
+  const [pendingDoneTask, setPendingDoneTask] = useState<{
+    task: ProjectWorkItemSummary;
+    originalStatus: TaskStatus;
+  } | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     task: ProjectWorkItemSummary;
   } | null>(null);
+
+  // Filters
+  const [filterAssignee, setFilterAssignee] = useState<number | "ALL">("ALL");
+  const [filterPriority, setFilterPriority] = useState<string>("ALL");
+  const [filterSearch, setFilterSearch] = useState("");
 
   useEffect(() => {
     const handleGlobalClick = () => setContextMenu(null);
@@ -131,6 +140,11 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
     const activeContainer = findContainer(active.id as number);
     const overContainer = findContainer(overId as number);
 
+    // 완료된 태스크는 다른 상태로 이동 불가
+    if (activeContainer === "DONE" && overContainer !== "DONE") {
+      return;
+    }
+
     if (!activeContainer || !overContainer || activeContainer === overContainer) {
       return;
     }
@@ -173,6 +187,12 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
     const activeContainer = findContainer(active.id as number);
     const overContainer = findContainer(over?.id as number);
 
+    // 완료된 태스크는 다른 상태로 이동 불가 (DragOver에서 막았지만 이중 체크)
+    if (activeContainer === "DONE" && overContainer !== "DONE") {
+      setActiveId(null);
+      return;
+    }
+
     if (
       !activeContainer ||
       !overContainer ||
@@ -203,16 +223,21 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
     // Oh wait, in DragEnd, the container migration already happened in DragOver. 
     // To know if status changed, we just look at what array it is in now compared to its real item.status
     if (itemToUpdate && itemToUpdate.status !== overContainer) {
-      // Optimiztic update already ran!
-      try {
-        await updateProjectWorkItem(project.id, itemToUpdate.id, {
-          status: overContainer
-        });
-        itemToUpdate.status = overContainer; // update local ref
-      } catch (err) {
-        console.error("Failed to update status", err);
-        // Better error handling: revert changes by reloading
-        loadItems();
+      if (overContainer === "DONE") {
+        // Show evidence modal before completing
+        setPendingDoneTask({ task: itemToUpdate, originalStatus: itemToUpdate.status as TaskStatus });
+      } else {
+        // Optimistic update already ran!
+        try {
+          await updateProjectWorkItem(project.id, itemToUpdate.id, {
+            status: overContainer
+          });
+          itemToUpdate.status = overContainer; // update local ref
+        } catch (err) {
+          console.error("Failed to update status", err);
+          // Better error handling: revert changes by reloading
+          loadItems();
+        }
       }
     }
   };
@@ -257,14 +282,88 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
     ? [...items.TODO, ...items.IN_PROGRESS, ...items.DONE].find(i => i.id === activeId) 
     : null;
 
+  const getFilteredItems = (status: TaskStatus) => {
+    return items[status].filter((item) => {
+      if (filterAssignee !== "ALL" && item.assignee?.id !== filterAssignee) return false;
+      if (filterPriority !== "ALL" && item.priority !== filterPriority) return false;
+      if (filterSearch && !item.title.toLowerCase().includes(filterSearch.toLowerCase())) return false;
+      return true;
+    });
+  };
+
+  const handleDoneCancel = () => {
+    setPendingDoneTask(null);
+    loadItems(); // Revert optimism
+  };
+
+  const handleDoneSubmit = async (evidenceUrl: string) => {
+    if (!pendingDoneTask) return;
+    try {
+      // NOTE: Here we append evidenceUrl or send it to the specialized endpoint.
+      // E.g., appending link to description so AI can find it later.
+      const newDesc = pendingDoneTask.task.description
+        ? `${pendingDoneTask.task.description}\n\n[Evidence]: ${evidenceUrl}`
+        : `[Evidence]: ${evidenceUrl}`;
+
+      await updateProjectWorkItem(project.id, pendingDoneTask.task.id, {
+        status: "DONE",
+        description: newDesc,
+      });
+      await loadItems();
+    } catch (err) {
+      console.error("Failed to complete task", err);
+      alert("할일을 완료 처리하는데 실패했습니다.");
+      loadItems();
+    } finally {
+      setPendingDoneTask(null);
+    }
+  };
+
   if (loading) return <div className="p-tasks-loading">불러오는 중...</div>;
 
   return (
     <div className="p-tasks-board-container">
-      <div className="p-tasks-header">
+      <div className="p-tasks-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>할일 보드</h2>
-        <p className="text-sm text-muted">카드를 드래그하여 상태를 변경하세요.</p>
+        <button
+          className="button button-primary"
+          onClick={() => setCreateStatus("TODO")}
+          style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#0066ff', color: 'white', cursor: 'pointer' }}
+        >
+          + 할일 추가
+        </button>
       </div>
+
+      <div className="p-tasks-filters" style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+        <input
+          type="text"
+          placeholder="할일 검색..."
+          value={filterSearch}
+          onChange={(e) => setFilterSearch(e.target.value)}
+          style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
+        />
+        <select
+          value={filterAssignee}
+          onChange={(e) => setFilterAssignee(e.target.value === "ALL" ? "ALL" : Number(e.target.value))}
+          style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
+        >
+          <option value="ALL">모든 작업자</option>
+          {project.members?.map(m => (
+            <option key={m.user_id} value={m.user_id}>{m.name}</option>
+          ))}
+        </select>
+        <select
+          value={filterPriority}
+          onChange={(e) => setFilterPriority(e.target.value)}
+          style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
+        >
+          <option value="ALL">모든 우선순위</option>
+          <option value="HIGH">높음 ↑</option>
+          <option value="MEDIUM">중간 ＝</option>
+          <option value="LOW">낮음 ↓</option>
+        </select>
+      </div>
+
       <div className="p-tasks-board">
         <DndContext
           sensors={sensors}
@@ -278,8 +377,7 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
               key={status}
               id={status}
               title={STATUS_LABELS[status]}
-              items={items[status]}
-              onAddClick={() => setCreateStatus(status)}
+              items={getFilteredItems(status)}
               onContextMenu={handleContextMenu}
             />
           ))}
@@ -336,6 +434,46 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
         task={editingTask}
         onUpdated={handleEditTask}
       />
+
+      {pendingDoneTask && (
+        <div className="p-tasks-context-menu" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "400px", padding: "24px", background: "white", borderRadius: "8px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", zIndex: 1000 }} onClick={e => e.stopPropagation()}>
+          <h3 style={{ marginBottom: "16px" }}>작업 완료 증빙 제출</h3>
+          <p style={{ fontSize: "14px", color: "#555", marginBottom: "16px" }}>
+            작업 완료를 위해 증빙 자료(URL 링크 등)를 제출해주세요.<br/>
+            (예: Google Docs 링크, Notion 페이지, Github PR 주소 등)
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <input
+              id="evidence-input"
+              type="text"
+              placeholder="https://..."
+              style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px" }}
+              autoFocus
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+              <button
+                onClick={handleDoneCancel}
+                style={{ padding: "8px 16px", background: "#f1f1f1", border: "none", borderRadius: "4px", cursor: "pointer" }}
+              >
+                취소
+              </button>
+              <button
+                onClick={() => {
+                  const input = document.getElementById("evidence-input") as HTMLInputElement;
+                  if (!input.value.trim()) {
+                    alert("증빙 URL을 입력해주세요.");
+                    return;
+                  }
+                  handleDoneSubmit(input.value.trim());
+                }}
+                style={{ padding: "8px 16px", background: "#0066ff", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
+              >
+                완료 처리
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -345,11 +483,10 @@ type KanbanColumnProps = {
   id: TaskStatus;
   title: string;
   items: ProjectWorkItemSummary[];
-  onAddClick: () => void;
   onContextMenu: (e: React.MouseEvent, task: ProjectWorkItemSummary) => void;
 };
 
-function KanbanColumn({ id, title, items, onAddClick, onContextMenu }: KanbanColumnProps) {
+function KanbanColumn({ id, title, items, onContextMenu }: KanbanColumnProps) {
   const { setNodeRef } = useDroppable({ id });
 
   return (
@@ -367,12 +504,6 @@ function KanbanColumn({ id, title, items, onAddClick, onContextMenu }: KanbanCol
             ))}
           </div>
         </SortableContext>
-      </div>
-
-      <div className="p-tasks-column-footer">
-        <button className="p-tasks-add-btn" onClick={onAddClick}>
-          + 할일 추가
-        </button>
       </div>
     </div>
   );
@@ -393,17 +524,17 @@ function SortableTaskCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.id });
+  } = useSortable({ id: item.id, disabled: item.status === "DONE" });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.3 : 1,
+    cursor: item.status === "DONE" ? "not-allowed" : "grab",
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard item={item} onContextMenu={onContextMenu} />
+    <div ref={setNodeRef} style={style} {...attributes} {...(item.status === "DONE" ? {} : listeners)}>      <TaskCard item={item} onContextMenu={onContextMenu} />
     </div>
   );
 }

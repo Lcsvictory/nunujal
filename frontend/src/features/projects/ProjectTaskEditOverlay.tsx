@@ -21,7 +21,14 @@ export function ProjectTaskEditOverlay({
   projectId,
   task,
 }: ProjectTaskEditOverlayProps) {
-  const [formState, setFormState] = useState<UpdateProjectWorkItemPayload>({});
+  const [formState, setFormState] = useState<UpdateProjectWorkItemPayload>({
+    title: "",
+    description: "",
+    status: "TODO",
+    priority: "MEDIUM",
+    timeline_start_date: "",
+    timeline_end_date: "",
+  });
   
   const [members, setMembers] = useState<ProjectMemberSummary[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -46,6 +53,16 @@ export function ProjectTaskEditOverlay({
         setMembers(res.items);
       }).catch(err => {
         console.error("멤버 목록 불러오기 실패", err);
+      });
+    } else if (!open) {
+      setFormState({
+        title: "",
+        description: "",
+        status: "TODO",
+        priority: "MEDIUM",
+        timeline_start_date: "",
+        timeline_end_date: "",
+        assignee_user_id: null,
       });
     }
   }, [open, task, projectId]);
@@ -123,6 +140,7 @@ export function ProjectTaskEditOverlay({
             <span>진행 상태</span>
             <select
               value={formState.status}
+              disabled={task?.status === "DONE"}
               onChange={(event) =>
                 setFormState((current) => ({
                   ...current,
@@ -130,10 +148,15 @@ export function ProjectTaskEditOverlay({
                 }))
               }
             >
-              <option value="TODO">진행 예정</option>
-              <option value="IN_PROGRESS">진행 중</option>
+              {task?.status !== "DONE" && <option value="TODO">진행 예정</option>}
+              {task?.status !== "DONE" && <option value="IN_PROGRESS">진행 중</option>}
               <option value="DONE">완료</option>
             </select>
+            {task?.status === "DONE" && (
+              <p style={{ fontSize: "12px", color: "#666", marginTop: "4px", margin: "0" }}>
+                완료된 할일은 상태를 변경할 수 없습니다.
+              </p>
+            )}
           </label>
 
           <label className="field">

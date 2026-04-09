@@ -130,23 +130,6 @@ export function ProjectTaskCreateOverlay({
 
         <div className="field-row">
           <label className="field">
-            <span>진행 상태</span>
-            <select
-              value={formState.status}
-              onChange={(event) =>
-                setFormState((current) => ({
-                  ...current,
-                  status: event.target.value as TaskStatus,
-                }))
-              }
-            >
-              <option value="TODO">진행 예정</option>
-              <option value="IN_PROGRESS">진행 중</option>
-              <option value="DONE">완료</option>
-            </select>
-          </label>
-
-          <label className="field">
             <span>우선순위</span>
             <select
               value={formState.priority}
