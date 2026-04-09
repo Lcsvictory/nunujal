@@ -6,9 +6,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "NunuJal API"
     app_env: str = "development"
-    frontend_url: str = "http://localhost:5073"
+    frontend_url: str = "https://nunujal.o-r.kr"
     server_port: int = 8028
-    google_redirect_uri: str = "http://localhost:8028/api/auth/google/callback"
+    google_redirect_uri: str = "https://nunujal.o-r.kr:8028/api/auth/google/callback"
     jwt_secret: str
     jwt_expire_minutes: int = 1440
 

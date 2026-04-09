@@ -31,13 +31,6 @@ app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_s
 
 app.include_router(api_router, prefix="/api")
 
-@app.get("/", summary="Root")
-def read_root() -> dict[str, str]:
-    return {
-        "message": f"NunuJal backend server is running. Port: {settings.server_port}",
-        "environment": settings.app_env,
-    }
-
 
 if __name__ == "__main__":
     import uvicorn
