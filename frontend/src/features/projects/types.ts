@@ -43,6 +43,7 @@ export type ProjectRecentActivity = {
   id: number;
   title: string;
   content: string;
+  activity_category: string;
   activity_type: string;
   review_state: string;
   occurred_at: string;
@@ -50,10 +51,15 @@ export type ProjectRecentActivity = {
     id: number;
     name: string;
   };
-  work_item: {
+  target_user: {
+    id: number;
+    name: string;
+  } | null;
+  work_items: {
     id: number;
     title: string;
-  } | null;
+  }[];
+  evidences?: any[];
 };
 
 export type ProjectOverview = {

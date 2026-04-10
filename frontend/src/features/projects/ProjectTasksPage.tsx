@@ -25,10 +25,13 @@ import { fetchProjectWorkItems, updateProjectWorkItem, deleteProjectWorkItem } f
 import type { ProjectDetail, ProjectWorkItemSummary } from "./types";
 import { ProjectTaskCreateOverlay } from "./ProjectTaskCreateOverlay";
 import { ProjectTaskEditOverlay } from "./ProjectTaskEditOverlay";
+import { ActivityLogOverlay } from "./ActivityLogOverlay";
+import { TaskReopenOverlay } from "./TaskReopenOverlay";
 import "./ProjectTasksPage.css";
 
 type ProjectTasksPageProps = {
   project: ProjectDetail;
+  onRefresh?: () => void;
 };
 
 const STATUSES = ["TODO", "IN_PROGRESS", "DONE"] as const;
@@ -40,7 +43,7 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   DONE: "완료",
 };
 
-export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) => {
+export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project, onRefresh }) => {
   const [items, setItems] = useState<Record<TaskStatus, ProjectWorkItemSummary[]>>({
     TODO: [],
     IN_PROGRESS: [],
@@ -53,6 +56,7 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
   const [pendingDoneTask, setPendingDoneTask] = useState<{
     task: ProjectWorkItemSummary;
     originalStatus: TaskStatus;
+    targetStatus: TaskStatus;
   } | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -140,10 +144,6 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
     const activeContainer = findContainer(active.id as number);
     const overContainer = findContainer(overId as number);
 
-    // 완료된 태스크는 다른 상태로 이동 불가
-    if (activeContainer === "DONE" && overContainer !== "DONE") {
-      return;
-    }
 
     if (!activeContainer || !overContainer || activeContainer === overContainer) {
       return;
@@ -187,11 +187,6 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
     const activeContainer = findContainer(active.id as number);
     const overContainer = findContainer(over?.id as number);
 
-    // 완료된 태스크는 다른 상태로 이동 불가 (DragOver에서 막았지만 이중 체크)
-    if (activeContainer === "DONE" && overContainer !== "DONE") {
-      setActiveId(null);
-      return;
-    }
 
     if (
       !activeContainer ||
@@ -223,20 +218,36 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
     // Oh wait, in DragEnd, the container migration already happened in DragOver. 
     // To know if status changed, we just look at what array it is in now compared to its real item.status
     if (itemToUpdate && itemToUpdate.status !== overContainer) {
-      if (overContainer === "DONE") {
-        // Show evidence modal before completing
-        setPendingDoneTask({ task: itemToUpdate, originalStatus: itemToUpdate.status as TaskStatus });
+      if (itemToUpdate.status === 'DONE' && overContainer !== 'DONE') {
+        setPendingDoneTask({
+          task: itemToUpdate,
+          originalStatus: itemToUpdate.status as TaskStatus,
+          targetStatus: overContainer as TaskStatus
+        });
       } else {
-        // Optimistic update already ran!
+        // Optimistic update
+        const originalStatus = itemToUpdate.status;
+        setItems(prev => {
+          const newItems = { ...prev };
+          const updatedItemIndex = newItems[overContainer].findIndex(i => i.id === itemToUpdate.id);
+          if (updatedItemIndex > -1) {
+            newItems[overContainer][updatedItemIndex] = {
+              ...itemToUpdate,
+              status: overContainer as TaskStatus
+            };
+          }
+          return newItems;
+        });
+
         try {
           await updateProjectWorkItem(project.id, itemToUpdate.id, {
-            status: overContainer
+            status: overContainer as TaskStatus
           });
-          itemToUpdate.status = overContainer; // update local ref
-        } catch (err) {
-          console.error("Failed to update status", err);
-          // Better error handling: revert changes by reloading
-          loadItems();
+          if (onRefresh) onRefresh();
+        } catch(err) {
+          console.error(err);
+          alert('상태 업데이트 실패');
+          await loadItems();
         }
       }
     }
@@ -291,33 +302,6 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
     });
   };
 
-  const handleDoneCancel = () => {
-    setPendingDoneTask(null);
-    loadItems(); // Revert optimism
-  };
-
-  const handleDoneSubmit = async (evidenceUrl: string) => {
-    if (!pendingDoneTask) return;
-    try {
-      // NOTE: Here we append evidenceUrl or send it to the specialized endpoint.
-      // E.g., appending link to description so AI can find it later.
-      const newDesc = pendingDoneTask.task.description
-        ? `${pendingDoneTask.task.description}\n\n[Evidence]: ${evidenceUrl}`
-        : `[Evidence]: ${evidenceUrl}`;
-
-      await updateProjectWorkItem(project.id, pendingDoneTask.task.id, {
-        status: "DONE",
-        description: newDesc,
-      });
-      await loadItems();
-    } catch (err) {
-      console.error("Failed to complete task", err);
-      alert("할일을 완료 처리하는데 실패했습니다.");
-      loadItems();
-    } finally {
-      setPendingDoneTask(null);
-    }
-  };
 
   if (loading) return <div className="p-tasks-loading">불러오는 중...</div>;
 
@@ -399,6 +383,18 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* <button
+            onClick={() => {
+              setPendingDoneTask({
+                task: contextMenu.task,
+                originalStatus: contextMenu.task.status as TaskStatus,
+                targetStatus: contextMenu.task.status as TaskStatus
+              });
+              setContextMenu(null);
+            }}
+          >
+            진행(활동) 상황 기록
+          </button> */}
           <button
             onClick={() => {
               setEditingTask(contextMenu.task);
@@ -436,43 +432,20 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project }) =
       />
 
       {pendingDoneTask && (
-        <div className="p-tasks-context-menu" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "400px", padding: "24px", background: "white", borderRadius: "8px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", zIndex: 1000 }} onClick={e => e.stopPropagation()}>
-          <h3 style={{ marginBottom: "16px" }}>작업 완료 증빙 제출</h3>
-          <p style={{ fontSize: "14px", color: "#555", marginBottom: "16px" }}>
-            작업 완료를 위해 증빙 자료(URL 링크 등)를 제출해주세요.<br/>
-            (예: Google Docs 링크, Notion 페이지, Github PR 주소 등)
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <input
-              id="evidence-input"
-              type="text"
-              placeholder="https://..."
-              style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px" }}
-              autoFocus
-            />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
-              <button
-                onClick={handleDoneCancel}
-                style={{ padding: "8px 16px", background: "#f1f1f1", border: "none", borderRadius: "4px", cursor: "pointer" }}
-              >
-                취소
-              </button>
-              <button
-                onClick={() => {
-                  const input = document.getElementById("evidence-input") as HTMLInputElement;
-                  if (!input.value.trim()) {
-                    alert("증빙 URL을 입력해주세요.");
-                    return;
-                  }
-                  handleDoneSubmit(input.value.trim());
-                }}
-                style={{ padding: "8px 16px", background: "#0066ff", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-              >
-                완료 처리
-              </button>
-            </div>
-          </div>
-        </div>
+        <TaskReopenOverlay
+          projectId={project.id}
+          task={pendingDoneTask.task}
+          targetStatus={pendingDoneTask.targetStatus as any}
+          onClose={() => {
+            setPendingDoneTask(null);
+            loadItems();
+          }}
+          onSuccess={() => {
+            setPendingDoneTask(null);
+            loadItems();
+            if (onRefresh) onRefresh();
+          }}
+        />
       )}
     </div>
   );
@@ -524,17 +497,17 @@ function SortableTaskCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.id, disabled: item.status === "DONE" });
+  } = useSortable({ id: item.id, disabled: false });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.3 : 1,
-    cursor: item.status === "DONE" ? "not-allowed" : "grab",
+    cursor: "grab",
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...(item.status === "DONE" ? {} : listeners)}>      <TaskCard item={item} onContextMenu={onContextMenu} />
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>      <TaskCard item={item} onContextMenu={onContextMenu} />
     </div>
   );
 }

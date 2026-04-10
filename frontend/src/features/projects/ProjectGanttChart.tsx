@@ -474,9 +474,9 @@ export function ProjectGanttChart({
           status: toApiStatus(task.status_code || "TODO"),
           priority: task.priority_code || "MEDIUM",
           assignee_user_id: task.assignee_user_id ? Number(task.assignee_user_id) : null,
-          timeline_start_date: toLocalIsoDate(startOfDay(scheduleStart ?? task.start_date ?? new Date())),
+          timeline_start_date: toLocalIsoDate(startOfDay(scheduleStart ?? task.start_date! ?? new Date())),
           timeline_end_date: toLocalIsoDate(
-            addDays(startOfDay(scheduleEnd ?? task.end_date ?? addDays(new Date(), 1)), -1)
+            addDays(startOfDay(scheduleEnd ?? task.end_date! ?? addDays(new Date(), 1)), -1)
           ),
         };
 
@@ -501,9 +501,9 @@ export function ProjectGanttChart({
           status: toApiStatus(task.status_code),
           priority: task.priority_code,
           assignee_user_id: task.assignee_user_id ? Number(task.assignee_user_id) : null,
-          timeline_start_date: toLocalIsoDate(startOfDay(scheduleStart ?? task.start_date ?? parseLocalDate(currentItem.startDate))),
+          timeline_start_date: toLocalIsoDate(startOfDay(scheduleStart ?? task.start_date! ?? parseLocalDate(currentItem.startDate))),
           timeline_end_date: toLocalIsoDate(
-            addDays(startOfDay(scheduleEnd ?? task.end_date ?? addDays(parseLocalDate(currentItem.endDate), 1)), -1)
+            addDays(startOfDay(scheduleEnd ?? task.end_date! ?? addDays(parseLocalDate(currentItem.endDate), 1)), -1)
           ),
         };
 
@@ -732,8 +732,8 @@ export function ProjectGanttChart({
           return;
         }
 
-        const start = startOfDay(task.start_date ?? today);
-        const endExclusive = startOfDay(task.end_date ?? addDays(start, 1));
+        const start = startOfDay(task.start_date! ?? today);
+        const endExclusive = startOfDay(task.end_date! ?? addDays(start, 1));
         const endInclusive = endExclusive.getTime() <= start.getTime() ? start : addDays(endExclusive, -1);
         const syncBounds = () => {
           endInput.min = startInput.value;
@@ -1023,11 +1023,11 @@ export function ProjectGanttChart({
       const item = workItemMapRef.current.get(String(id));
       if (!item) return;
 
-      const newStart = toLocalIsoDate(startOfDay(task.start_date));
-      const endExclusive = startOfDay(task.end_date);
+      const newStart = toLocalIsoDate(startOfDay(task.start_date!));
+      const endExclusive = startOfDay(task.end_date!);
       const newEnd = toLocalIsoDate(
-        endExclusive.getTime() <= startOfDay(task.start_date).getTime() 
-          ? startOfDay(task.start_date) 
+        endExclusive.getTime() <= startOfDay(task.start_date!).getTime() 
+          ? startOfDay(task.start_date!) 
           : addDays(endExclusive, -1)
       );
 

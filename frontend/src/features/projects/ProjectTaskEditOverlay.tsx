@@ -136,7 +136,7 @@ export function ProjectTaskEditOverlay({
         </label>
 
         <div className="field-row">
-          <label className="field">
+          {/* <label className="field">
             <span>진행 상태</span>
             <select
               value={formState.status}
@@ -161,7 +161,7 @@ export function ProjectTaskEditOverlay({
                 할일 완료 처리는 보드에서만 가능합니다.
               </p>
             )}
-          </label>
+          </label> */}
 
           <label className="field">
             <span>우선순위</span>

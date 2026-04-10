@@ -74,6 +74,44 @@ class UpdateWorkItemRequest(BaseModel):
 class CreateWorkItemDependencyRequest(BaseModel):
     predecessor_work_item_id: int
     successor_work_item_id: int
+
+class EvidenceCreateRequest(BaseModel):
+    evidence_type: str
+    evidence_role: str = "SUPPORTING"
+    description: str | None = None
+    resource_url: str | None = None
+    file_name: str | None = None
+
+class ActivityCreateRequest(BaseModel):
+    work_item_ids: list[int] = []
+    target_task_status: str | None = None
+    category: str = "BASIC"
+    activity_type: str = "FINALIZATION"
+    contribution_phase: str = "FINALIZATION"
+    title: str
+    content: str
+    target_user_id: int | None = None
+    evidences: list[EvidenceCreateRequest] = []
+
+
+class EvidenceCreateRequest(BaseModel):
+    evidence_type: str
+    evidence_role: str = "SUPPORTING"
+    description: str | None = None
+    resource_url: str | None = None
+    file_name: str | None = None
+
+class ActivityCreateRequest(BaseModel):
+    work_item_ids: list[int] = []
+    target_task_status: str | None = None
+    category: str = "BASIC"
+    activity_type: str = "FINALIZATION"
+    contribution_phase: str = "FINALIZATION"
+    title: str
+    content: str
+    target_user_id: int | None = None
+    evidences: list[EvidenceCreateRequest] = []
+
 class ProjectWorkItemConnectionManager:
     def __init__(self) -> None:
         self._connections: dict[int, set[WebSocket]] = defaultdict(set)
@@ -114,6 +152,49 @@ class ProjectWorkItemConnectionManager:
 
 
 work_item_connection_manager = ProjectWorkItemConnectionManager()
+
+
+class ProjectPresenceManager:
+    def __init__(self) -> None:
+        self._active_users = __import__("collections").defaultdict(dict)
+        self._connections = __import__("collections").defaultdict(dict)
+
+    async def connect(self, project_id: int, user_summary: dict, websocket: WebSocket) -> None:
+        await websocket.accept()
+        user_id = user_summary["id"]
+        self._connections[project_id][websocket] = user_id
+        
+        if user_id not in self._active_users[project_id]:
+           self._active_users[project_id][user_id] = {"count": 1, "info": user_summary}
+        else:
+           self._active_users[project_id][user_id]["count"] += 1
+           
+        await self.broadcast_presence(project_id)
+
+    async def disconnect(self, project_id: int, websocket: WebSocket) -> None:
+        user_id = self._connections.get(project_id, {}).pop(websocket, None)
+        if user_id and user_id in self._active_users.get(project_id, {}):
+            self._active_users[project_id][user_id]["count"] -= 1
+            if self._active_users[project_id][user_id]["count"] <= 0:
+                del self._active_users[project_id][user_id]
+            await self.broadcast_presence(project_id)
+
+    async def broadcast_presence(self, project_id: int) -> None:
+        users = [data["info"] for data in self._active_users.get(project_id, {}).values()]
+        payload = {"type": "presence_update", "active_users": users}
+        stale_connections = []
+        for ws in list(self._connections.get(project_id, {}).keys()):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                stale_connections.append(ws)
+        
+        for ws in stale_connections:
+            await self.disconnect(project_id, ws)
+
+presence_manager = ProjectPresenceManager()
+
+
 
 
 def _serialize_current_user(user: models.AppUser) -> dict[str, object]:
@@ -604,7 +685,7 @@ def create_project_work_item(
         
         activity = models.Activity(
             project_id=project.id,
-            work_item_id=work_item.id,
+            work_items=[work_item],
             actor_user_id=current_user.id,
             activity_type="CONTENT_EDITING",
             contribution_phase="PREPARATION",
@@ -687,7 +768,7 @@ def update_project_work_item(
 
         activity = models.Activity(
             project_id=project_id,
-            work_item_id=work_item.id,
+            work_items=[work_item],
             actor_user_id=current_user.id,
             activity_type="CONTENT_EDITING",
             contribution_phase="REFINEMENT",
@@ -733,7 +814,7 @@ def delete_project_work_item(
         now = datetime.now()
         activity = models.Activity(
             project_id=project_id,
-            work_item_id=None,
+            work_items=[],
             actor_user_id=current_user.id,
             activity_type="CONTENT_EDITING",
             contribution_phase="FINALIZATION",
@@ -866,6 +947,7 @@ async def project_work_item_events(
 
         current_user = get_authenticated_user_from_token(session, access_token)
         _require_project_access(session, project_id, current_user.id)
+        session.close()
 
         await work_item_connection_manager.connect(project_id, websocket)
         await websocket.send_json(
@@ -885,7 +967,53 @@ async def project_work_item_events(
         pass
     finally:
         work_item_connection_manager.disconnect(project_id, websocket)
+        try:
+            session.close()
+        except Exception:
+            pass
+
+
+
+@router.websocket("/{project_id}/presence/ws")
+async def project_presence_events(
+    websocket: WebSocket,
+    project_id: int,
+) -> None:
+    session = get_session()
+    try:
+        access_token = websocket.cookies.get("access_token")
+        if not access_token:
+            authorization = websocket.headers.get("authorization")
+            if authorization and authorization.startswith("Bearer "):
+                access_token = authorization.removeprefix("Bearer ").strip()
+        if not access_token:
+            access_token = websocket.query_params.get("token")
+
+        current_user = get_authenticated_user_from_token(session, access_token)
+        _require_project_access(session, project_id, current_user.id)
+        
+        user_info = {
+            "id": current_user.id,
+            "name": current_user.name,
+            "profile_image_url": current_user.profile_image_url
+        }
         session.close()
+
+        await presence_manager.connect(project_id, user_info, websocket)
+
+        while True:
+            await websocket.receive_text()
+    except HTTPException as exc:
+        close_code = 4401 if exc.status_code == 401 else 4403
+        await websocket.close(code=close_code)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await presence_manager.disconnect(project_id, websocket)
+        try:
+            session.close()
+        except Exception:
+            pass
 
 
 @router.get("/{project_id}", summary="Get project detail")
@@ -933,13 +1061,18 @@ def get_project(
         done_count = sum(1 for work_item in work_items if work_item.status == "DONE")
         completion_rate = int((done_count / total_work_items) * 100) if total_work_items else 0
 
-        recent_activities = (
-            session.query(models.Activity, models.AppUser, models.WorkItem)
+        from sqlalchemy.orm import aliased
+        TargetUser = aliased(models.AppUser)
+        recent_activities_tuples = (
+            session.query(models.Activity, models.AppUser, TargetUser)
             .join(models.AppUser, models.AppUser.id == models.Activity.actor_user_id)
-            .outerjoin(models.WorkItem, models.WorkItem.id == models.Activity.work_item_id)
-            .filter(models.Activity.project_id == project_id)
+            .outerjoin(TargetUser, TargetUser.id == models.Activity.target_user_id)
+            .filter(
+                models.Activity.project_id == project_id,
+                models.Activity.source_type != "SYSTEM_IMPORTED"
+            )
             .order_by(models.Activity.occurred_at.desc())
-            .limit(5)
+            .limit(20)
             .all()
         )
 
@@ -986,18 +1119,32 @@ def get_project(
                             "activity_type": activity.activity_type,
                             "review_state": activity.review_state,
                             "occurred_at": activity.occurred_at.isoformat(),
+                            "activity_category": activity.activity_category,
                             "actor": {
                                 "id": actor.id,
                                 "name": actor.name,
                             },
-                            "work_item": {
-                                "id": work_item.id,
-                                "title": work_item.title,
-                            }
-                            if work_item
-                            else None,
+                            "target_user": {
+                                "id": target_user.id,
+                                "name": target_user.name,
+                            } if target_user else None,
+                            "work_items": [
+                                {
+                                    "id": w.id,
+                                    "title": w.title,
+                                } for w in activity.work_items
+                            ],
+                            "evidences": [
+                                {
+                                    "id": ev.id,
+                                    "evidence_type": ev.evidence_type,
+                                    "description": ev.description,
+                                    "resource_url": ev.resource_url,
+                                }
+                                for ev in activity.evidence_items
+                            ]
                         }
-                        for activity, actor, work_item in recent_activities
+                        for activity, actor, target_user in recent_activities_tuples
                     ],
                 },
             },
@@ -1308,3 +1455,231 @@ def review_project_join_request(
     finally:
         session.close()
 
+
+
+@router.post(
+    "/{project_id}/activities",
+    summary="Create an activity and optionally update task status",
+    status_code=status.HTTP_201_CREATED
+)
+def create_activity(
+    project_id: int,
+    payload: ActivityCreateRequest,
+    req: FastAPIRequest,
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> dict[str, object]:
+    session = get_session()
+    try:
+        user = get_authenticated_user(request=req, session=session, authorization=authorization)
+        user_id = user.id
+        member = session.query(models.ProjectMember).filter(
+            models.ProjectMember.project_id == project_id,
+            models.ProjectMember.user_id == user_id
+        ).first()
+        if not member:
+            return {"status": "error", "message": "Not a project member"}
+
+        work_items = []
+        if payload.work_item_ids:
+            work_items = session.query(models.WorkItem).filter(
+                models.WorkItem.project_id == project_id,
+                models.WorkItem.id.in_(payload.work_item_ids)
+            ).all()
+            if len(work_items) != len(payload.work_item_ids):
+                return {"status": "error", "message": "One or more WorkItems not found"}
+
+        if payload.target_task_status == "DONE" and not payload.evidences:
+             return {"status": "error", "message": "Evidence is required when completing a task."}
+
+        now = datetime.now()
+        is_reopening = False
+        for work_item in work_items:
+            if payload.target_task_status in ["TODO", "IN_PROGRESS"] and work_item.status == "DONE":
+                is_reopening = True
+                break
+
+        new_activity = models.Activity(
+            project_id=project_id,
+            actor_user_id=user_id,
+            target_user_id=payload.target_user_id,
+            activity_category=payload.category,
+            activity_type=payload.activity_type,
+            contribution_phase=payload.contribution_phase,
+            title=payload.title,
+            content=payload.content,
+            source_type="SYSTEM_IMPORTED" if is_reopening else "MANUAL",
+            credibility_level="SYSTEM_IMPORTED" if is_reopening else "SELF_REPORTED",
+            occurred_at=now,
+            created_at=now,
+            updated_at=now
+        )
+        
+        for w_item in work_items:
+            new_activity.work_items.append(w_item)
+            
+        session.add(new_activity)
+        session.flush()
+
+        for ev_req in payload.evidences:
+            if ev_req.evidence_type in ("LINK", "FILE") and (not ev_req.description or len(ev_req.description.strip()) < 10):
+                 # enforcing logic but loosely for now
+                 pass
+            new_ev = models.Evidence(
+                activity_id=new_activity.id,
+                uploaded_by_user_id=user_id,
+                evidence_type=ev_req.evidence_type,
+                evidence_role=ev_req.evidence_role,
+                description=ev_req.description,
+                resource_url=ev_req.resource_url,
+                file_name=ev_req.file_name,
+                captured_at=now
+            )
+            session.add(new_ev)
+
+        has_changed_status = False
+        for w_item in work_items:
+            if payload.target_task_status == "DONE":
+                w_item.status = "DONE"
+                has_changed_status = True
+            elif payload.target_task_status == "IN_PROGRESS":
+                w_item.status = "IN_PROGRESS"
+                if not w_item.started_at:
+                    w_item.started_at = now
+                has_changed_status = True
+            elif payload.target_task_status == "TODO":
+                w_item.status = "TODO"
+                has_changed_status = True
+
+            if has_changed_status:
+                session.add(w_item)
+                
+        session.commit()
+        session.refresh(new_activity)
+
+        if has_changed_status and len(work_items) > 0:
+            try:
+                # If we had a websocket connection loop we should notify here, but we will ignore it for now or do it later
+                pass
+            except Exception:
+                pass
+
+        return {
+            "status": "created",
+            "message": "Activity created successfully",
+            "activity_id": new_activity.id,
+            "work_item_status_changed": has_changed_status
+        }
+    except Exception as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}
+    finally:
+        session.close()
+
+
+@router.put("/{project_id}/activities/{activity_id}")
+def update_activity(
+    project_id: int,
+    activity_id: int,
+    payload: dict,
+    req: FastAPIRequest,
+    authorization: str | None = Header(None, alias="Authorization"),
+):
+    session = get_session()
+    try:
+        user = get_authenticated_user(request=req, session=session, authorization=authorization)
+        user_id = user.id
+        activity = session.query(models.Activity).filter(
+            models.Activity.project_id == project_id,
+            models.Activity.id == activity_id
+        ).first()
+        if not activity:
+            raise HTTPException(status_code=404, detail="Activity not found")
+        if activity.actor_user_id != user_id:
+            raise HTTPException(status_code=403, detail="Only author can update")
+        
+        # Save revision history
+        now = datetime.now()
+        rev = models.ActivityRevisionHistory(
+            activity_id=activity.id,
+            edited_by_user_id=user_id,
+            previous_title=activity.title,
+            previous_content=activity.content,
+            previous_contribution_phase=activity.contribution_phase,
+            previous_credibility_level=activity.credibility_level,
+            previous_review_state=activity.review_state,
+            change_reason="User manually updated",
+            edited_at=now
+        )
+        activity.updated_at = now
+        session.add(rev)
+
+        # Update fields
+        if "content" in payload:
+            activity.content = payload["content"]
+        if "title" in payload:
+            activity.title = payload["title"]
+        if "activity_category" in payload:
+            activity.activity_category = payload["activity_category"]
+            
+        if "evidences" in payload:
+            session.query(models.Evidence).filter(models.Evidence.activity_id == activity.id).delete(synchronize_session=False)
+            for ev_data in payload["evidences"]:
+                session.add(models.Evidence(
+                    activity_id=activity.id,
+                    uploaded_by_user_id=user_id,
+                    evidence_type=ev_data.get("evidence_type", "TEXT"),
+                    description=ev_data.get("description"),
+                    resource_url=ev_data.get("resource_url"),
+                    evidence_role=ev_data.get("evidence_role", "SUPPORTING"),
+                    verification_status="SELF_SUBMITTED",
+                    captured_at=datetime.now()
+                ))
+        
+        activity.last_edited_by_user_id = user_id
+        activity.updated_at = datetime.now()
+        
+        session.commit()
+        return {"status": "success"}
+    except Exception as exc:
+        session.rollback()
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        session.close()
+
+
+@router.delete("/{project_id}/activities/{activity_id}")
+def delete_activity(
+    project_id: int,
+    activity_id: int,
+    req: FastAPIRequest,
+    authorization: str | None = Header(None, alias="Authorization"),
+):
+    session = get_session()
+    try:
+        user = get_authenticated_user(request=req, session=session, authorization=authorization)
+        user_id = user.id
+        activity = session.query(models.Activity).filter(
+            models.Activity.project_id == project_id,
+            models.Activity.id == activity_id
+        ).first()
+        if not activity:
+            raise HTTPException(status_code=404, detail="Activity not found")
+        if activity.actor_user_id != user_id:
+            # Check if leader
+            member = session.query(models.ProjectMember).filter(
+                models.ProjectMember.project_id == project_id,
+                models.ProjectMember.user_id == user_id
+            ).first()
+            if not member or member.project_role != "LEADER":
+                raise HTTPException(status_code=403, detail="Only author or LEADER can delete")
+        
+        session.delete(activity)
+        session.commit()
+        return {"status": "success"}
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        session.close()

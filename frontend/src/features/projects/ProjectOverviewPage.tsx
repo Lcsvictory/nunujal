@@ -1,7 +1,7 @@
 import { ProjectMembersPage } from "./ProjectMembersPage";
 import { ProjectTasksPage } from "./ProjectTasksPage";
 import { useEffect, useMemo, useState } from "react";
-import { ApiError, logout, apiJsonRequest } from "../../lib/api";
+import { ApiError, logout, apiJsonRequest, getApiWebSocketBaseUrl } from "../../lib/api";
 import { navigate } from "../../lib/router";
 import type { AuthUser } from "../auth/types";
 import { fetchProjectDetail, deleteProject } from "./api";
@@ -68,6 +68,41 @@ export function ProjectOverviewPage({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+
+  // ========== 프로젝트 웹소켓 현재 접속자 상태 관리 ==========
+  const [activeUsers, setActiveUsers] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!projectId) return;
+
+    const wsUrl = `${getApiWebSocketBaseUrl()}/api/projects/${projectId}/presence/ws`;
+    const socket = new WebSocket(wsUrl);
+
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "presence_update") {
+          setActiveUsers(data.active_users || []);
+        }
+      } catch (err) {
+        console.error("Failed to parse presence update", err);
+      }
+    };
+
+    socket.onclose = () => {
+      console.log("Presence WebSocket closed");
+    };
+
+    return () => {
+      socket.close();
+    };
+  }, [projectId]);
+
+  // team members excluding myself
+  const currentUserId = currentUser?.id;
+  const activeTeammates = activeUsers.filter(u => u.id !== currentUserId);
+
+
   const currentSection = activeSection;
 
   const loadProject = async () => {
@@ -271,10 +306,13 @@ export function ProjectOverviewPage({
                       </div>
                       <p>{activity.content}</p>
                       <div className="activity-meta">
-                        <span>{activity.actor.name}</span>
+                        <span style={{ fontWeight: 'bold' }}>{activity.actor.name}</span>
+                        {activity.activity_category === 'PEER_SUPPORT' && activity.target_user && (
+                            <span>➔ <strong style={{ color: '#0066ff' }}>{activity.target_user.name}</strong> 지원</span>
+                        )}
                         <span>{formatActivityType(activity.activity_type)}</span>
                         <span>{formatDateTime(activity.occurred_at)}</span>
-                        <span>{activity.work_item?.title ?? "연결된 업무 없음"}</span>
+                        <span>{(activity.work_items && activity.work_items.length > 0) ? `[${activity.work_items.map(w => w.title).join(', ')}]` : "연결된 업무 없음"}</span>
                       </div>
                     </div>
                   </article>
@@ -305,11 +343,11 @@ export function ProjectOverviewPage({
     }
 
     if (activeSection === "tasks" && project) {
-      return <ProjectTasksPage project={project} />;
+      return <ProjectTasksPage project={project} onRefresh={loadProject} />;
     }
 
     if (activeSection === "activities") {
-      return <ProjectActivitiesPage />;
+      return project ? <ProjectActivitiesPage project={project} onRefresh={loadProject} /> : null;
     }
 
     return (
@@ -337,13 +375,13 @@ export function ProjectOverviewPage({
         </div>
 
         <div className="workspace-topbar-actions" style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <button
-            type="button"
-            className="button button-ghost"
-            onClick={onMoveToProjects}
-          >
-            ← 프로젝트 목록으로
-          </button>
+          <div className="workspace-active-users" style={{ display: "flex", gap: "-5px", marginRight: "10px" }}>
+            {activeTeammates.map((u, idx) => (
+              <div key={idx} style={{ width: "32px", height: "32px", borderRadius: "50%", border: "2px solid white", overflow: "hidden", marginLeft: "-10px", zIndex: activeTeammates.length - idx, backgroundColor: "#ccc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold", color: "#555" }} title={u.name}>
+                {u.profile_image_url ? <img src={u.profile_image_url} alt={u.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : buildInitials(u.name)}
+              </div>
+            ))}
+          </div>
           <button
             type="button"
             className="workspace-profile-trigger"
@@ -361,7 +399,7 @@ export function ProjectOverviewPage({
 
             <div className="workspace-profile-copy">
               <strong>{currentUser?.name ?? "사용자"}</strong>
-              <span>{currentUser?.department ?? currentUser?.email ?? "내 정보"}</span>
+              
             </div>
           </button>
         </div>
@@ -406,6 +444,16 @@ export function ProjectOverviewPage({
           </nav>
 
           <div className="workspace-sidebar-footer">
+            <button
+              type="button"
+              className="workspace-sidebar-logout"
+              onClick={onMoveToProjects}
+              title={isSidebarCollapsed ? "프로젝트 목록으로" : undefined}
+              style={{ marginBottom: "5px" }}
+            >
+              <OverviewIcon className="workspace-nav-icon" />
+              {!isSidebarCollapsed ? <span>프로젝트 목록으로</span> : null}
+            </button>
             <button
               type="button"
               className="workspace-sidebar-logout"
