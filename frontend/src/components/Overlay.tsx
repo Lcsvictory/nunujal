@@ -1,4 +1,4 @@
-import { useEffect, useId, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useId, useState, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 type OverlayProps = {
@@ -18,14 +18,23 @@ export function Overlay({
 }: OverlayProps) {
   const titleId = useId();
   const descriptionId = useId();
+  const [container, setContainer] = useState<Element | null>(null);
+
+  useEffect(() => {
+    const updateContainer = () => {
+      setContainer(document.fullscreenElement || document.body);
+    };
+    updateContainer();
+    document.addEventListener("fullscreenchange", updateContainer);
+    return () => {
+      document.removeEventListener("fullscreenchange", updateContainer);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) {
       return undefined;
     }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -35,12 +44,11 @@ export function Overlay({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [onClose, open]);
 
-  if (!open) {
+  if (!open || !container) {
     return null;
   }
 
@@ -76,6 +84,6 @@ export function Overlay({
         <div className="overlay-body">{children}</div>
       </section>
     </div>,
-    document.body,
+    container,
   );
 }

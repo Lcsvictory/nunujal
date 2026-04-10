@@ -214,7 +214,7 @@ function toChartWorkItem(item: ProjectWorkItemSummary): ChartWorkItem {
     code: `WI-${String(item.id).padStart(3, "0")}`,
     title: item.title,
     description: item.description.trim() || "설명이 아직 없습니다.",
-    owner: item.assignee?.name ?? item.creator.name,
+    owner: item.assignee?.name ?? "미지정",
     creatorName: item.creator.name,
     status: getWorkItemStatus(item.status),
     priority: item.priority,
@@ -667,8 +667,8 @@ export function ProjectGanttChart({
     ganttInstance.config.root_id = 0;
     ganttInstance.config.open_tree_initially = true;
     ganttInstance.config.show_progress = false;
-    ganttInstance.config.drag_move = false;
-    ganttInstance.config.drag_resize = false;
+    ganttInstance.config.drag_move = true;
+    ganttInstance.config.drag_resize = true;
     ganttInstance.config.drag_progress = false;
     ganttInstance.config.drag_links = true;
     ganttInstance.config.details_on_dblclick = false;
@@ -680,15 +680,38 @@ export function ProjectGanttChart({
     ganttInstance.config.bar_height = 28;
     ganttInstance.config.show_links = true;
     ganttInstance.config.smart_scales = true;
-    ganttConfig.quickinfo_buttons = ["icon_edit", "icon_delete"];
-    ganttInstance.locale.labels.icon_edit = "수정";
-    ganttInstance.locale.labels.icon_delete = "삭제";
+    ganttConfig.quickinfo_buttons = ["edit", "delete"];
+    ganttInstance.locale.labels.edit = "수정";
+    ganttInstance.locale.labels.delete = "삭제";
     ganttInstance.locale.labels.section_title = "제목";
     ganttInstance.locale.labels.section_description = "설명";
     ganttInstance.locale.labels.section_status = "상태";
     ganttInstance.locale.labels.section_priority = "우선순위";
     ganttInstance.locale.labels.section_assignee = "담당자";
     ganttInstance.locale.labels.section_schedule = "기간";
+
+    // 한국어 표기 추가
+    ganttInstance.locale.labels.new_task = "새로운 할일";
+    ganttInstance.locale.labels.icon_save = "저장";
+    ganttInstance.locale.labels.icon_cancel = "취소";
+    ganttInstance.locale.labels.icon_details = "상세";
+    ganttInstance.locale.labels.confirm_link_deleting = "선후관계 연결을 삭제하시겠습니까?";
+    ganttInstance.locale.labels.link_from = "부터";
+    ganttInstance.locale.labels.link_to = "까지";
+    ganttInstance.locale.labels.link_start = " (시작)";
+    ganttInstance.locale.labels.link_end = " (종료)";
+    ganttInstance.locale.labels.minutes = "분";
+    ganttInstance.locale.labels.hours = "시간";
+    ganttInstance.locale.labels.days = "일";
+    ganttInstance.locale.labels.weeks = "주";
+    ganttInstance.locale.labels.months = "월";
+    ganttInstance.locale.labels.years = "년";
+    ganttInstance.locale.labels.message_ok = "확인";
+    ganttInstance.locale.labels.message_cancel = "취소";
+    ganttInstance.locale.date.month_full = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
+    ganttInstance.locale.date.month_short = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
+    ganttInstance.locale.date.day_full = ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"];
+    ganttInstance.locale.date.day_short = ["일", "월", "화", "수", "목", "금", "토"];
     ganttInstance.form_blocks.date_range = {
       render() {
         return `<div class="gantt-date-range-editor">
@@ -795,7 +818,14 @@ export function ProjectGanttChart({
       }
       return "";
     };
-    ganttInstance.templates.task_text = (_start, _end, task) => (task as DhtmlxTask).code;
+    ganttInstance.templates.task_text = (_start, _end, task) => {
+      const ganttTask = task as DhtmlxTask;
+      const title = ganttTask.text || "";
+      
+      // getTaskPosition을 템플릿 안에서 호출하면 스크롤 시 계속해서 강제 리플로우를 발생시켜 렌더링 렉이 심해집니다.
+      // 따라서 CSS 속성을 이용해 넘치는 텍스트를 줄임표(...) 처리하도록 합니다.
+      return `<div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 4px; padding-right: 4px;">${escapeHtml(title)}</div>`;
+    };
     ganttInstance.templates.task_class = (_start, _end, task) => {
       const ganttTask = task as DhtmlxTask;
       return `gantt-task-status-${ganttTask.status_code}`;
@@ -988,6 +1018,46 @@ export function ProjectGanttChart({
       void deleteWorkItemById(String(id));
       return false;
     });
+    const afterTaskDragEventId = ganttInstance.attachEvent("onAfterTaskDrag", (id, _mode, _e) => {
+      const task = ganttInstance.getTask(id) as DhtmlxTask;
+      const item = workItemMapRef.current.get(String(id));
+      if (!item) return;
+
+      const newStart = toLocalIsoDate(startOfDay(task.start_date));
+      const endExclusive = startOfDay(task.end_date);
+      const newEnd = toLocalIsoDate(
+        endExclusive.getTime() <= startOfDay(task.start_date).getTime() 
+          ? startOfDay(task.start_date) 
+          : addDays(endExclusive, -1)
+      );
+
+      if (item.startDate === newStart && item.endDate === newEnd) {
+        return;
+      }
+
+      setIsSyncing(true);
+      updateProjectWorkItem(projectIdRef.current, Number(id), {
+        title: item.title,
+        description: item.description,
+        status: item.status === "done" ? "DONE" : item.status === "in_progress" ? "IN_PROGRESS" : "TODO",
+        priority: item.priority,
+        assignee_user_id: item.assigneeUserId,
+        timeline_start_date: newStart,
+        timeline_end_date: newEnd,
+      })
+        .then(() => {
+          setErrorMessage(null);
+        })
+        .catch((error: unknown) => {
+          const msg = error instanceof ApiError ? error.message : "워크아이템 일정을 변경하지 못했습니다.";
+          alert(`일정 변경 실패: ${msg}\n(원래 일정으로 되돌립니다)`);
+          setErrorMessage(msg);
+          void refreshSnapshot({ background: true });
+        })
+        .finally(() => {
+          setIsSyncing(false);
+        });
+    });
 
     return () => {
       taskData?.removeEventListener("wheel", handleTimelineWheel);
@@ -997,6 +1067,7 @@ export function ProjectGanttChart({
       ganttInstance.detachEvent(beforeLinkAddEventId);
       ganttInstance.detachEvent(afterLinkAddEventId);
       ganttInstance.detachEvent(afterLinkDeleteEventId);
+      ganttInstance.detachEvent(afterTaskDragEventId);
       ganttInstance.detachEvent(lightboxSaveEventId);
       ganttInstance.detachEvent(lightboxDeleteEventId);
       if (markerIdRef.current !== null) {
@@ -1060,11 +1131,12 @@ export function ProjectGanttChart({
         ganttInstance.deleteMarker(markerIdRef.current);
         markerIdRef.current = null;
       }
+      const now = new Date();
       markerIdRef.current = ganttInstance.addMarker({
-        start_date: today,
+        start_date: now,
         css: "gantt-today-marker",
         // text: "오늘",
-        title: formatDateLabel(toLocalIsoDate(today)),
+        title: formatDateLabel(toLocalIsoDate(now)) + ` ${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`,
       });
     });
     isApplyingSnapshotRef.current = false;
@@ -1112,6 +1184,28 @@ export function ProjectGanttChart({
       shouldCenterTodayRef.current = false;
     });
   }, [isVisible, today]);
+
+  // 오늘을 가리키는 빨간 마커를 주기에 맞춰 계속 갱신하여 1칸(24H) 내부에서도 이동하게 설정
+  useEffect(() => {
+    if (!isVisible) {
+      return;
+    }
+    const interval = setInterval(() => {
+      const ganttInstance = ganttRef.current;
+      const markerId = markerIdRef.current;
+      if (ganttInstance && markerId !== null) {
+        const marker = ganttInstance.getMarker(markerId);
+        if (marker) {
+          const now = new Date();
+          marker.start_date = now;
+          marker.title = formatDateLabel(toLocalIsoDate(now)) + ` ${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+          ganttInstance.updateMarker(markerId);
+        }
+      }
+    }, 60000); // 1분 마다 갱신
+
+    return () => clearInterval(interval);
+  }, [isVisible]);
 
   const handleZoomIn = () => {
     ganttRef.current?.ext.zoom.zoomIn();

@@ -148,13 +148,17 @@ export function ProjectTaskEditOverlay({
                 }))
               }
             >
-              {task?.status !== "DONE" && <option value="TODO">진행 예정</option>}
-              {task?.status !== "DONE" && <option value="IN_PROGRESS">진행 중</option>}
-              <option value="DONE">완료</option>
+              <option value="TODO">진행 예정</option>
+              <option value="IN_PROGRESS">진행 중</option>
+              {task?.status === "DONE" && <option value="DONE">완료</option>}
             </select>
-            {task?.status === "DONE" && (
+            {task?.status === "DONE" ? (
               <p style={{ fontSize: "12px", color: "#666", marginTop: "4px", margin: "0" }}>
                 완료된 할일은 상태를 변경할 수 없습니다.
+              </p>
+            ) : (
+              <p style={{ fontSize: "12px", color: "#666", marginTop: "4px", margin: "0" }}>
+                할일 완료 처리는 보드에서만 가능합니다.
               </p>
             )}
           </label>
