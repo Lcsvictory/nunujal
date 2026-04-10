@@ -30,7 +30,7 @@ type ProjectOverviewPageProps = {
   onMoveToProjects: () => void;
 };
 
-type WorkspaceSection = "overview" | "tasks" | "members" | "contribution" | "profile";
+type WorkspaceSection = "overview" | "tasks" | "activities" | "members" | "contribution" | "profile";
 
 type WorkspaceNavigationItem = {
   key: Exclude<WorkspaceSection, "profile">;
@@ -41,6 +41,7 @@ type WorkspaceNavigationItem = {
 const navigationItems: WorkspaceNavigationItem[] = [
   { key: "overview", label: "개요", icon: OverviewIcon },
   { key: "tasks", label: "할일", icon: TodoIcon },
+  { key: "activities", label: "활동", icon: ContributionIcon },
   { key: "members", label: "팀원", icon: MembersIcon },
   { key: "contribution", label: "기여도", icon: ContributionIcon },
 ];
@@ -52,6 +53,8 @@ function buildInitials(name: string | undefined): string {
 
   return name.slice(0, 1).toUpperCase();
 }
+
+import { ProjectActivitiesPage } from "./ProjectActivitiesPage";
 
 export function ProjectOverviewPage({
   projectId,
@@ -289,6 +292,7 @@ export function ProjectOverviewPage({
   const renderPlaceholderSection = () => {
     const sectionTitleMap: Record<Exclude<WorkspaceSection, "overview">, string> = {
       tasks: "할일 페이지",
+      activities: "활동 피드 페이지",
       members: "팀원 페이지",
       contribution: "기여도 페이지",
       profile: "내 정보 페이지",
@@ -302,6 +306,10 @@ export function ProjectOverviewPage({
 
     if (activeSection === "tasks" && project) {
       return <ProjectTasksPage project={project} />;
+    }
+
+    if (activeSection === "activities") {
+      return <ProjectActivitiesPage />;
     }
 
     return (

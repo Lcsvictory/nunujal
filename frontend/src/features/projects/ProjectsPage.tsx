@@ -185,7 +185,7 @@ export function ProjectsPage({
               style={{ whiteSpace: "nowrap", gap: "8px", display: "inline-flex", alignItems: "center" }}
             >
               로그아웃
-              <LogoutIcon /> 
+              {/* <LogoutIcon />  */}
             </button>
             <button
               type="button"

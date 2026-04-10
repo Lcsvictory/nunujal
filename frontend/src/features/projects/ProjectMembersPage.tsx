@@ -55,7 +55,8 @@ export function ProjectMembersPage({ project }: ProjectMembersPageProps) {
 
   return (
     <section className="surface-panel" style={{ padding: "2rem" }}>
-      <h1>팀원 페이지</h1>
+      <h1>**미완성입니다**</h1>
+      <h2>팀원 페이지</h2>
       
       {errorMessage && <div className="error-message" style={{ color: "red", marginBottom: "1rem" }}>{errorMessage}</div>}
 
