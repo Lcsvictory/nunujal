@@ -15,6 +15,8 @@ from sqlalchemy import (
     Identity,
     UniqueConstraint,
     text,
+    Table,
+    Column,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -70,6 +72,10 @@ class AppUser(Base):
     activities: Mapped[list["Activity"]] = relationship(
         back_populates="actor_user",
         foreign_keys="Activity.actor_user_id",
+    )
+    targeted_activities: Mapped[list["Activity"]] = relationship(
+        back_populates="target_user",
+        foreign_keys="Activity.target_user_id",
     )
     edited_activities: Mapped[list["Activity"]] = relationship(
         back_populates="last_edited_by_user",
@@ -269,8 +275,17 @@ class WorkItem(Base):
         foreign_keys="WorkItemDependency.successor_work_item_id",
         cascade="all, delete-orphan",
     )
-    activities: Mapped[list["Activity"]] = relationship(back_populates="work_item")
+    activities: Mapped[list["Activity"]] = relationship(
+        secondary="activity_work_item_link", 
+        back_populates="work_items"
+    )
 
+activity_work_item_link = Table(
+    "activity_work_item_link",
+    Base.metadata,
+    Column("activity_id", BIGINT, ForeignKey("activity.id", ondelete="CASCADE"), primary_key=True),
+    Column("work_item_id", BIGINT, ForeignKey("work_item.id", ondelete="CASCADE"), primary_key=True),
+)
 
 class WorkItemDependency(Base):
     __tablename__ = "work_item_dependency"
@@ -318,6 +333,10 @@ class Activity(Base):
     __tablename__ = "activity"
     __table_args__ = (
         CheckConstraint(
+            "activity_category IN ('BASIC', 'PEER_SUPPORT', 'COMMON')",
+            name="chk_activity_category",
+        ),
+        CheckConstraint(
             "activity_type IN ("
             "'MATERIAL_COLLECTION', 'MEETING_RECORD', 'CONTENT_EDITING', 'FINALIZATION'"
             ")",
@@ -346,8 +365,9 @@ class Activity(Base):
 
     id: Mapped[int] = mapped_column(BIGINT, Identity(always=True), primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("project.id", ondelete="CASCADE"), nullable=False)
-    work_item_id: Mapped[int] = mapped_column(ForeignKey("work_item.id", ondelete="SET NULL"), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=False)
+    target_user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=True)
+    activity_category: Mapped[str] = mapped_column(VARCHAR(20), server_default="BASIC", nullable=False)
     activity_type: Mapped[str] = mapped_column(VARCHAR(40), nullable=False)
     contribution_phase: Mapped[str] = mapped_column(VARCHAR(20), nullable=False)
     title: Mapped[str] = mapped_column(VARCHAR(200), nullable=False)
@@ -368,8 +388,12 @@ class Activity(Base):
     correction_reason: Mapped[str] = mapped_column(TEXT, nullable=True)
 
     project: Mapped["Project"] = relationship(back_populates="activities")
-    work_item: Mapped["WorkItem"] = relationship(back_populates="activities")
-    actor_user: Mapped[AppUser] = relationship(back_populates="activities", foreign_keys=[actor_user_id])
+    work_items: Mapped[list["WorkItem"]] = relationship(
+        secondary="activity_work_item_link", 
+        back_populates="activities"
+    )
+    actor_user: Mapped[AppUser] = relationship(back_populates="activities", foreign_keys=[actor_user_id])    
+    target_user: Mapped["AppUser"] = relationship(back_populates="targeted_activities", foreign_keys=[target_user_id])    
     last_edited_by_user: Mapped["AppUser"] = relationship(
         back_populates="edited_activities",
         foreign_keys=[last_edited_by_user_id],
@@ -617,7 +641,7 @@ class Evidence(Base):
             "OR (activity_id IS NULL AND feedback_review_id IS NOT NULL)",
             name="chk_evidence_target_exactly_one",
         ),
-        CheckConstraint("evidence_type IN ('FILE', 'LINK', 'IMAGE')", name="chk_evidence_type"),
+        CheckConstraint("evidence_type IN ('FILE', 'LINK', 'IMAGE', 'TEXT')", name="chk_evidence_type"),
         CheckConstraint("evidence_role IN ('SUPPORTING', 'CONTRADICTING', 'OUTPUT')", name="chk_evidence_role"),
         CheckConstraint(
             "verification_status IN ('SELF_SUBMITTED', 'SYSTEM_LINKED', 'VERIFIED', 'DISPUTED')",
@@ -632,7 +656,7 @@ class Evidence(Base):
     evidence_type: Mapped[str] = mapped_column(VARCHAR(20), nullable=False)
     evidence_role: Mapped[str] = mapped_column(VARCHAR(20), nullable=False)
     file_name: Mapped[str] = mapped_column(VARCHAR(255), nullable=True)
-    resource_url: Mapped[str] = mapped_column(TEXT, nullable=False)
+    resource_url: Mapped[str] = mapped_column(TEXT, nullable=True)
     description: Mapped[str] = mapped_column(TEXT, nullable=True)
     integrity_hash: Mapped[str] = mapped_column(VARCHAR(255), nullable=True)
     verification_status: Mapped[str] = mapped_column(

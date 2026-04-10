@@ -172,8 +172,9 @@ def insert_dummy_data(session: Session) -> dict[str, int | str]:
 
     activity_1 = models.Activity(
         project_id=project.id,
-        work_item_id=work_item_1.id,
+        work_items=[work_item_1],
         actor_user_id=member.id,
+        activity_category="BASIC",
         activity_type="CONTENT_EDITING",
         contribution_phase="DRAFTING",
         title="Drafted login UI",
@@ -187,8 +188,10 @@ def insert_dummy_data(session: Session) -> dict[str, int | str]:
     )
     activity_2 = models.Activity(
         project_id=project.id,
-        work_item_id=work_item_2.id,
+        work_items=[work_item_2],
         actor_user_id=reviewer.id,
+        target_user_id=member.id,
+        activity_category="PEER_SUPPORT",
         activity_type="MEETING_RECORD",
         contribution_phase="REFINEMENT",
         title="ORM review meeting",

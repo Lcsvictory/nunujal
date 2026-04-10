@@ -224,9 +224,10 @@ CREATE TABLE activity (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
     project_id BIGINT NOT NULL,
-    work_item_id BIGINT,
     actor_user_id BIGINT NOT NULL,
+    target_user_id BIGINT,
 
+    activity_category VARCHAR(20) NOT NULL DEFAULT 'BASIC',
     activity_type VARCHAR(40) NOT NULL,
     contribution_phase VARCHAR(20) NOT NULL,
 
@@ -260,9 +261,22 @@ CREATE TABLE activity (
         FOREIGN KEY (actor_user_id)
         REFERENCES app_user(id),
 
+    CONSTRAINT fk_activity_target_user
+        FOREIGN KEY (target_user_id)
+        REFERENCES app_user(id),
+
     CONSTRAINT fk_activity_last_edited_user
         FOREIGN KEY (last_edited_by_user_id)
         REFERENCES app_user(id),
+
+    CONSTRAINT chk_activity_category
+        CHECK (
+            activity_category IN (
+                'BASIC',
+                'PEER_SUPPORT',
+                'COMMON'
+            )
+        ),
 
     CONSTRAINT chk_activity_type
         CHECK (
@@ -363,6 +377,67 @@ CREATE TABLE activity_revision_history (
             )
         ),
 
+    CONSTRAINT chk_activity_revision_history_review_state
+        CHECK (
+            previous_review_state IN (
+                'NORMAL',
+                'UNDER_REVIEW',
+                'DISPUTED',
+                'RESOLVED'
+            )
+        )
+);
+
+
+CREATE TABLE activity_work_item_link (
+    activity_id BIGINT NOT NULL,
+    work_item_id BIGINT NOT NULL,
+    PRIMARY KEY (activity_id, work_item_id),
+    CONSTRAINT fk_activity_link
+        FOREIGN KEY (activity_id) REFERENCES activity(id) ON DELETE CASCADE,
+    CONSTRAINT fk_work_item_link
+        FOREIGN KEY (work_item_id) REFERENCES work_item(id) ON DELETE CASCADE
+);
+
+CREATE TABLE activity_revision_history (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    
+    activity_id BIGINT NOT NULL,
+    edited_by_user_id BIGINT NOT NULL,
+    
+    previous_title VARCHAR(200) NOT NULL,
+    previous_content TEXT NOT NULL,
+    previous_contribution_phase VARCHAR(20) NOT NULL,
+    previous_credibility_level VARCHAR(30) NOT NULL,
+    previous_review_state VARCHAR(20) NOT NULL,
+    
+    change_reason TEXT NOT NULL,
+    edited_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_revision_history_activity
+        FOREIGN KEY (activity_id) REFERENCES activity(id) ON DELETE CASCADE,
+    CONSTRAINT fk_revision_history_editor
+        FOREIGN KEY (edited_by_user_id) REFERENCES app_user(id),
+
+    CONSTRAINT chk_activity_revision_history_phase
+        CHECK (
+            previous_contribution_phase IN (
+                'PREPARATION',
+                'DRAFTING',
+                'REFINEMENT',
+                'FINALIZATION',
+                'SUPPORT'
+            )
+        ),
+    CONSTRAINT chk_activity_revision_history_credibility
+        CHECK (
+            previous_credibility_level IN (
+                'SELF_REPORTED',
+                'EVIDENCE_BACKED',
+                'PEER_CONFIRMED',
+                'SYSTEM_IMPORTED'
+            )
+        ),
     CONSTRAINT chk_activity_revision_history_review_state
         CHECK (
             previous_review_state IN (
@@ -613,7 +688,7 @@ CREATE TABLE evidence (
     evidence_role VARCHAR(20) NOT NULL,
 
     file_name VARCHAR(255),
-    resource_url TEXT NOT NULL,
+    resource_url TEXT,
     description TEXT,
     integrity_hash VARCHAR(255),
 
