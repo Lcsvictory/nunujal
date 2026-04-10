@@ -187,8 +187,6 @@ CREATE TABLE work_item (
 
     CONSTRAINT chk_work_item_time_order
         CHECK (
-            (started_at IS NULL OR started_at >= created_at)
-            AND
             (completed_at IS NULL OR started_at IS NULL OR completed_at >= started_at)
         )
 );

@@ -231,8 +231,7 @@ class WorkItem(Base):
         CheckConstraint("status IN ('TODO', 'IN_PROGRESS', 'DONE')", name="chk_work_item_status"),
         CheckConstraint("priority IN ('LOW', 'MEDIUM', 'HIGH')", name="chk_work_item_priority"),
         CheckConstraint(
-            "(started_at IS NULL OR started_at >= created_at) "
-            "AND (completed_at IS NULL OR started_at IS NULL OR completed_at >= started_at)",
+            "completed_at IS NULL OR started_at IS NULL OR completed_at >= started_at",
             name="chk_work_item_time_order",
         ),
     )

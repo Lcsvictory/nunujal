@@ -307,16 +307,9 @@ def _apply_work_item_schedule(
     status: str,
 ) -> None:
     if timeline_end_date < timeline_start_date:
-        raise HTTPException(status_code=400, detail="Work item end date cannot be earlier than the start date.")
-    if timeline_start_date < work_item.created_at.date():
-        raise HTTPException(
-            status_code=400,
-            detail="Work item start date cannot be earlier than the creation date in the current schema.",
-        )
+        raise HTTPException(status_code=400, detail="종료일이 시작일보다 앞설 수 없습니다.")
 
     started_at = _combine_work_date(timeline_start_date)
-    if started_at < work_item.created_at:
-        started_at = work_item.created_at
     work_item.started_at = started_at
 
     work_item.due_date = timeline_end_date
