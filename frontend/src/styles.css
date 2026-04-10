@@ -177,7 +177,10 @@ textarea {
 .surface-panel {
   border: 1px solid var(--panel-border);
   background: var(--panel);
-  backdrop-filter: blur(18px);
+  /* blur(18px) 적용 시 스크롤 시 화면 연산량이 급증하여 심각한 렉(프레임 드랍)이 생김 */
+  /* backdrop-filter: blur(18px); */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
   box-shadow: var(--shadow-soft);
 }
 
@@ -534,8 +537,9 @@ textarea {
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgba(11, 21, 46, 0.5);
-  backdrop-filter: blur(10px);
+  background: rgba(11, 21, 46, 0.7);
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
   z-index: 30;
 }
 
