@@ -31,6 +31,11 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
   const [evidenceDesc, setEvidenceDesc] = useState(initialEv.description || '');
   const [resourceURL, setResourceUrl] = useState(initialEv.resource_url || '');
 
+  const [activityType, setActivityType] = useState<string>(editContext?.activity_type || 'FINALIZATION');
+  const [customActivityType, setCustomActivityType] = useState("");
+
+  const PREDEFINED_TYPES = ['MATERIAL_COLLECTION', 'MEETING_RECORD', 'CONTENT_EDITING', 'FINALIZATION'];
+
   useEffect(() => {
     fetchProjectWorkItems(projectId).then(res => {
       setTasks(res.items);
@@ -67,7 +72,7 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
   }, [selectedCategory]);
 
   const overlayTitle = editContext ? "활동 내역 수정하기" : "행동 기록 남기기";
-  const contentPlaceholder = "어떤 논의나 코딩을 통해 활동을 진행했나요?";
+  const contentPlaceholder = "어떤 활동을 진행했나요?";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,6 +92,7 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
         await apiJsonRequest(`/api/projects/${projectId}/activities/${editContext.id}`, 'PUT', {
            content,
            activity_category: selectedCategory,
+           activity_type: activityType,
            evidences
         });
       } else {
@@ -94,7 +100,7 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
         work_item_ids: selectedCategory === 'COMMON' ? [] : selectedTaskIds,
         category: selectedCategory,
         target_user_id: selectedCategory === 'PEER_SUPPORT' && tasks.find(t => t.id === selectedTaskIds[0])?.assignee?.id || null,
-        activity_type: 'FINALIZATION',
+        activity_type: activityType,
         contribution_phase: 'FINALIZATION',
         title: 'Task Activity Record',
         content,
@@ -114,7 +120,7 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
   return (
     <Overlay 
       open={true} 
-      description="진행사항이나 기억할 점을 남깁니다. 할일의 상태는 할일 페이지에서만 변경 가능합니다." 
+      description="할일의 상태는 할일 페이지에서만 변경 가능합니다." 
       title={overlayTitle} 
       onClose={onClose}
     >
@@ -125,9 +131,9 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
           <label style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             기여 유형:
             <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value as 'BASIC' | 'PEER_SUPPORT' | 'COMMON')} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}>
-              <option value="BASIC">📝 내 할일 관련</option>
-              <option value="PEER_SUPPORT">🤝 팀원 할일 지원</option>
-              <option value="COMMON">🌐 공통 작업 (할일 매핑 없음)</option>
+              <option value="BASIC">내 할일</option>
+              <option value="PEER_SUPPORT">팀원 할일 지원</option>
+              <option value="COMMON">공통 작업 (할일 매핑 없음)</option>
             </select>
           </label>
         )}
@@ -144,16 +150,16 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
                 <>
                   <input type="text" placeholder="할일 제목이나 담당자 검색..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }} />
                   <select 
-  value="" 
-  onChange={e => {
-    const val = Number(e.target.value);
-    if (!selectedTaskIds.includes(val)) {
-      setSelectedTaskIds([...selectedTaskIds, val]);
-    }
-  }} 
-  size={4} 
-  style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
->
+                    value="" 
+                    onChange={e => {
+                      const val = Number(e.target.value);
+                      if (!selectedTaskIds.includes(val)) {
+                        setSelectedTaskIds([...selectedTaskIds, val]);
+                      }
+                    }} 
+                    size={4} 
+                    style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
+                  >
   <option value="" disabled>할일을 클릭하여 선택하세요...</option>
   {filteredTasks.length === 0 ? <option disabled>조건에 맞는 할일이 없습니다.</option> : null}
   {filteredTasks.map(t => (
@@ -201,6 +207,45 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
           />
         </label>
 
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+          활동 성격:
+          <select 
+            value={PREDEFINED_TYPES.includes(activityType) ? activityType : "OTHER"} 
+            onChange={e => {
+              if (e.target.value !== "OTHER") {
+                setActivityType(e.target.value);
+                setCustomActivityType("");
+              } else {
+                setActivityType("");
+              }
+            }} 
+            style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}
+          >
+            <option value="MATERIAL_COLLECTION">자료 수집</option>
+            <option value="MEETING_RECORD">회의 기록</option>
+            <option value="CONTENT_EDITING">콘텐츠 편집</option>
+            <option value="FINALIZATION">최종 정리</option>
+            <option value="OTHER">기타 (직접 입력)</option>
+          </select>
+        </label>
+        
+        {!PREDEFINED_TYPES.includes(activityType) && (
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            기타 성격 (직접 입력):
+            <input 
+              type="text" 
+              value={customActivityType} 
+              onChange={e => {
+                setCustomActivityType(e.target.value);
+                setActivityType(e.target.value);
+              }} 
+              placeholder="" 
+              style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }} 
+              required
+            />
+          </label>
+        )}
+
         {/* Evidence Attachment */}
         <div style={{ padding: '1rem', border: '1px solid #ddd', borderRadius: '4px', backgroundColor: 'transparent' }}>
           <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold' }}>증거 자료 첨부 (선택사항)</p>
@@ -219,7 +264,6 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
                value={evidenceDesc}
                onChange={e => setEvidenceDesc(e.target.value)}
                style={{ width: '100%', marginTop: '0.25rem', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
-               placeholder={evidenceType === 'LINK' ? 'PR 리뷰 반영 완료 내역' : '예: 구현 코드 스니펫'}
              />
           </label>
           {(evidenceType === 'LINK' || evidenceType === 'FILE') && (

@@ -337,12 +337,6 @@ class Activity(Base):
             name="chk_activity_category",
         ),
         CheckConstraint(
-            "activity_type IN ("
-            "'MATERIAL_COLLECTION', 'MEETING_RECORD', 'CONTENT_EDITING', 'FINALIZATION'"
-            ")",
-            name="chk_activity_type",
-        ),
-        CheckConstraint(
             "contribution_phase IN ("
             "'PREPARATION', 'DRAFTING', 'REFINEMENT', 'FINALIZATION', 'SUPPORT'"
             ")",

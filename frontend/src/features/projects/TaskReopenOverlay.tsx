@@ -27,7 +27,7 @@ export function TaskReopenOverlay({ projectId, task, targetStatus, onClose, onSu
       const payload = {
         work_item_ids: [task.id],
         category: 'BASIC',
-        activity_type: 'FINALIZATION',
+        activity_type: 'OTHER',
         contribution_phase: 'FINALIZATION',
         title: `작업 재개: ${targetStatus === 'IN_PROGRESS' ? '진행 중' : '진행 예정'}으로 변경`,
         content: `워크 아이템 정보가 ${targetStatus === 'IN_PROGRESS' ? '진행 중' : '진행 예정'}으로 변경되었습니다.\n\n재개 사유: ${reason}`,

@@ -278,16 +278,6 @@ CREATE TABLE activity (
             )
         ),
 
-    CONSTRAINT chk_activity_type
-        CHECK (
-            activity_type IN (
-                'MATERIAL_COLLECTION',
-                'MEETING_RECORD',
-                'CONTENT_EDITING',
-                'FINALIZATION'
-            )
-        ),
-
     CONSTRAINT chk_activity_phase
         CHECK (
             contribution_phase IN (
