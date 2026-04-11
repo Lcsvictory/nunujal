@@ -71,7 +71,7 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
     <div className="activities-page-container">
       <header className="activities-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h2>활동 히스토리 (Feed)</h2>
+          <h2>활동</h2>
           <p>프로젝트 내 모든 활동과 기여 내역을 모아봅니다.</p>
         </div>
         <button 
@@ -128,12 +128,28 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
             
             return (
               <div key={activity.id} className="activity-card" style={{ position: 'relative' }}>
-                {isMine && (
-                  <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px' }}>
-                    <button onClick={() => { setEditingActivity(activity); setEditContent(activity.content); }} style={{ fontSize: '0.8rem', padding: '2px 5px', cursor: 'pointer' }}>수정</button>
-                    <button onClick={() => handleDelete(activity.id)} style={{ fontSize: '0.8rem', padding: '2px 5px', cursor: 'pointer', color: 'red' }}>삭제</button>
-                  </div>
-                )}
+                <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px' }}>
+                  {isMine && (
+                    <>
+                      <button onClick={() => { setEditingActivity(activity); setEditContent(activity.content); }} style={{ fontSize: '0.8rem', padding: '2px 5px', cursor: 'pointer' }}>수정</button>
+                      <button onClick={() => handleDelete(activity.id)} style={{ fontSize: '0.8rem', padding: '2px 5px', cursor: 'pointer', color: 'red' }}>삭제</button>
+                    </>
+                  )}
+                  {activity.activity_category === 'PEER_SUPPORT' && activity.review_state === 'UNDER_REVIEW' && activity.target_user?.id === currentUserId && (
+                    <button 
+                      onClick={async () => {
+                        try {
+                          await apiJsonRequest(`/api/projects/${project.id}/activities/${activity.id}/approve`, "POST", {});
+                          onRefresh();
+                        } catch(e) {
+                          alert("승인 실패");
+                        }
+                      }} 
+                      style={{ fontSize: '0.8rem', padding: '2px 8px', cursor: 'pointer', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>
+                      ✓ 승인
+                    </button>
+                  )}
+                </div>
                 <div className="activity-card-header">
                   <span className={`activity-badge ${config.colorClass}`}>
                     {config.label}

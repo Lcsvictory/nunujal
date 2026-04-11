@@ -303,6 +303,24 @@ export function ProjectOverviewPage({
                         <span className="meta-chip">
                           {formatReviewState(activity.review_state)}
                         </span>
+                        {activity.activity_category === 'PEER_SUPPORT' && 
+                         activity.review_state === 'UNDER_REVIEW' && 
+                         activity.target_user?.id === currentUserId && (
+                          <button 
+                            type="button" 
+                            style={{ padding: "2px 8px", fontSize: "12px", background: "#10b981", color: "white", borderRadius: "4px", border: "none", cursor: "pointer", marginLeft: "10px" }}
+                            onClick={async () => {
+                              try {
+                                await apiJsonRequest(`/api/projects/${project.id}/activities/${activity.id}/approve`, "POST", {});
+                                loadProject();
+                              } catch (e) {
+                                alert("승인 처리 중 오류가 발생했습니다.");
+                              }
+                            }}
+                          >
+                            ✓ 승인하기
+                          </button>
+                        )}
                       </div>
                       <p>{activity.content}</p>
                       <div className="activity-meta">
@@ -375,10 +393,40 @@ export function ProjectOverviewPage({
         </div>
 
         <div className="workspace-topbar-actions" style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <div className="workspace-active-users" style={{ display: "flex", gap: "-5px", marginRight: "10px" }}>
+          <div className="workspace-active-users" style={{ display: "flex", gap: "8px", marginRight: "10px" }}>
             {activeTeammates.map((u, idx) => (
-              <div key={idx} style={{ width: "32px", height: "32px", borderRadius: "50%", border: "2px solid white", overflow: "hidden", marginLeft: "-10px", zIndex: activeTeammates.length - idx, backgroundColor: "#ccc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold", color: "#555" }} title={u.name}>
-                {u.profile_image_url ? <img src={u.profile_image_url} alt={u.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : buildInitials(u.name)}
+              <div 
+                key={idx} 
+                className="workspace-active-user-avatar"
+                style={{ 
+                  position: "relative",
+                  width: "44px", 
+                  height: "44px", 
+                  borderRadius: "50%", 
+                  border: "2px solid white", 
+                  marginLeft: "-10px", 
+                  zIndex: activeTeammates.length - idx, 
+                  backgroundColor: "#ccc", 
+                  display: "flex", 
+                  alignItems: "center", 
+                  justifyContent: "center", 
+                  fontSize: "18px", 
+                  fontWeight: "bold", 
+                  color: "#555" 
+                }} 
+              >
+                {u.profile_image_url ? (
+                  <img 
+                    src={u.profile_image_url} 
+                    alt={u.name} 
+                    style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} 
+                  />
+                ) : (
+                  buildInitials(u.name)
+                )}
+                <div className="active-user-tooltip">
+                  {u.name}
+                </div>
               </div>
             ))}
           </div>

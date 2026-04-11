@@ -7,7 +7,7 @@ from datetime import date, datetime, time, timedelta
 from fastapi import APIRouter, Header, HTTPException, Request as FastAPIRequest, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 import app.models as models
 from app.core.config import get_settings
@@ -303,6 +303,17 @@ def _serialize_project_work_item(work_item: models.WorkItem) -> dict[str, object
     assignee = work_item.assignee_user
     timeline_start, timeline_end = _get_work_item_timeline_dates(work_item)
     duration_days = (timeline_end - timeline_start).days + 1
+    
+    contributors_dict = {}
+    if hasattr(work_item, "activities"):
+        for act in work_item.activities:
+            actor = act.actor_user
+            if actor and (not assignee or actor.id != assignee.id):
+                contributors_dict[actor.id] = {
+                    "id": actor.id,
+                    "name": actor.name,
+                    "profile_image_url": actor.profile_image_url
+                }
 
     return {
         "id": work_item.id,
@@ -321,13 +332,16 @@ def _serialize_project_work_item(work_item: models.WorkItem) -> dict[str, object
         "creator": {
             "id": creator.id,
             "name": creator.name,
+            "profile_image_url": creator.profile_image_url
         },
         "assignee": {
             "id": assignee.id,
             "name": assignee.name,
+            "profile_image_url": assignee.profile_image_url
         }
         if assignee
         else None,
+        "contributors": list(contributors_dict.values()),
     }
 
 
@@ -337,6 +351,9 @@ def _build_project_work_item_snapshot(
 ) -> dict[str, object]:
     work_items = (
         session.query(models.WorkItem)
+        .options(
+            selectinload(models.WorkItem.activities).selectinload(models.Activity.actor_user)
+        )
         .filter(models.WorkItem.project_id == project_id)
         .order_by(models.WorkItem.created_at.asc(), models.WorkItem.id.asc())
         .all()
@@ -1509,6 +1526,7 @@ def create_activity(
             content=payload.content,
             source_type="SYSTEM_IMPORTED" if is_reopening else "MANUAL",
             credibility_level="SYSTEM_IMPORTED" if is_reopening else "SELF_REPORTED",
+            review_state="UNDER_REVIEW" if payload.category == "PEER_SUPPORT" else "NORMAL",
             occurred_at=now,
             created_at=now,
             updated_at=now
@@ -1620,6 +1638,8 @@ def update_activity(
             activity.title = payload["title"]
         if "activity_category" in payload:
             activity.activity_category = payload["activity_category"]
+        if "activity_type" in payload:
+            activity.activity_type = payload["activity_type"]
             
         if "evidences" in payload:
             session.query(models.Evidence).filter(models.Evidence.activity_id == activity.id).delete(synchronize_session=False)
@@ -1636,6 +1656,47 @@ def update_activity(
                 ))
         
         activity.last_edited_by_user_id = user_id
+        activity.updated_at = datetime.now()
+        
+        session.commit()
+        return {"status": "success"}
+    except Exception as exc:
+        session.rollback()
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        session.close()
+
+
+@router.post("/{project_id}/activities/{activity_id}/approve")
+def approve_peer_support_activity(
+    project_id: int,
+    activity_id: int,
+    req: FastAPIRequest,
+    authorization: str | None = Header(None, alias="Authorization"),
+):
+    session = get_session()
+    try:
+        user = get_authenticated_user(request=req, session=session, authorization=authorization)
+        user_id = user.id
+        
+        activity = session.query(models.Activity).filter(
+            models.Activity.project_id == project_id,
+            models.Activity.id == activity_id
+        ).first()
+        
+        if not activity:
+            raise HTTPException(status_code=404, detail="Activity not found")
+            
+        if activity.target_user_id != user_id:
+            raise HTTPException(status_code=403, detail="Only the target user can approve this peer support")
+            
+        if activity.review_state != "UNDER_REVIEW" or activity.activity_category != "PEER_SUPPORT":
+            raise HTTPException(status_code=400, detail="Activity is not pending peer approval")
+            
+        activity.review_state = "RESOLVED"
+        activity.credibility_level = "PEER_CONFIRMED"
         activity.updated_at = datetime.now()
         
         session.commit()

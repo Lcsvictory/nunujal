@@ -111,11 +111,18 @@ export type ProjectWorkItemSummary = {
   creator: {
     id: number;
     name: string;
+    profile_image_url?: string;
   };
   assignee: {
     id: number;
     name: string;
+    profile_image_url?: string;
   } | null;
+  contributors?: {
+    id: number;
+    name: string;
+    profile_image_url?: string;
+  }[];
 };
 
 export type ProjectWorkItemDependency = {

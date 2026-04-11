@@ -527,17 +527,76 @@ function TaskCard({
       onContextMenu={(e) => onContextMenu?.(e, item)}
     >
       <div className="p-task-card-title">{item.title}</div>
-      <div className="p-task-card-footer">
-        <div className="p-task-priority">
-          {item.priority === "HIGH" && <span className="p-prio high">↑</span>}
-          {item.priority === "MEDIUM" && <span className="p-prio medium">＝</span>}
-          {item.priority === "LOW" && <span className="p-prio low">↓</span>}
+      {item.description && (
+        <div className="p-task-card-desc" style={{ fontSize: "12px", color: "#777", marginTop: "4px", marginBottom: "8px", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          {item.description}
         </div>
-        {item.assignee && (
-          <div className="p-task-assignee" title={item.assignee.name}>
-            {item.assignee.name.charAt(0)}
-          </div>
-        )}
+      )}
+      <div className="p-task-card-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "8px" }}>
+        <div className="p-task-priority" style={{ paddingBottom: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
+          {item.priority === "HIGH" && (
+            <div style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", backgroundColor: "#ffebee", color: "#d32f2f", borderRadius: "6px", fontSize: "12px", fontWeight: "bold" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+              <span>높음</span>
+            </div>
+          )}
+          {item.priority === "MEDIUM" && (
+            <div style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", backgroundColor: "#fff8e1", color: "#ed6c02", borderRadius: "6px", fontSize: "12px", fontWeight: "bold" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/></svg>
+              <span>보통</span>
+            </div>
+          )}
+          {item.priority === "LOW" && (
+            <div style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", backgroundColor: "#e8f5e9", color: "#2e7d32", borderRadius: "6px", fontSize: "12px", fontWeight: "bold" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              <span>낮음</span>
+            </div>
+          )}
+        </div>
+        
+        <div className="p-task-users" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
+          {item.assignee && (
+            <div style={{ display: "flex", alignItems: "center" }} title={`담당자: ${item.assignee.name}`}>
+              <div 
+                style={{ 
+                  width: "44px", height: "44px", borderRadius: "50%", 
+                  backgroundColor: "#f0f0f0", display: "flex", alignItems: "center", 
+                  justifyContent: "center", fontSize: "16px", fontWeight: "bold", color: "#333",
+                  border: "2px solid #0066ff", boxSizing: "border-box"
+                }}
+              >
+                {item.assignee.profile_image_url ? (
+                  <img src={item.assignee.profile_image_url} alt={item.assignee.name} style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }} />
+                ) : (
+                  item.assignee.name.charAt(0)
+                )}
+              </div>
+            </div>
+          )}
+
+          {item.contributors && item.contributors.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "row-reverse", gap: "6px", justifyContent: "flex-start", flexWrap: "wrap", marginRight: item.assignee ? "6px" : "0px" }}>
+              {item.contributors.map((c) => (
+                <div 
+                  key={c.id}
+                  title={`기여자: ${c.name}`}
+                  style={{ 
+                    width: "32px", height: "32px", borderRadius: "50%", 
+                    backgroundColor: "#eee", display: "flex", alignItems: "center", 
+                    justifyContent: "center", fontSize: "12px", color: "#666",
+                    border: "1px dashed #aaa", boxSizing: "border-box"
+                  }}
+                >
+                  {c.profile_image_url ? (
+                    <img src={c.profile_image_url} alt={c.name} style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }} />
+                  ) : (
+                    c.name.charAt(0)
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

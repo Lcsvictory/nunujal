@@ -2281,3 +2281,49 @@ textarea {
     flex-direction: column;
   }
 }
+
+/* Active User Tooltip */
+.workspace-active-user-avatar .active-user-tooltip {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  top: 110%; /* Place it slightly below the avatar */
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--surface-highest, #333);
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 999;
+  transition: opacity 0.2s, visibility 0.2s;
+  pointer-events: none;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.workspace-active-user-avatar:hover .active-user-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
+.workspace-active-user-avatar::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 4px;
+  border-style: solid;
+  border-color: transparent transparent var(--surface-highest, #333) transparent;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.2s, visibility 0.2s;
+  pointer-events: none;
+  z-index: 999;
+}
+
+.workspace-active-user-avatar:hover::after {
+  visibility: visible;
+  opacity: 1;
+}
