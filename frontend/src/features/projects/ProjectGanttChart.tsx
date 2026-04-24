@@ -211,7 +211,7 @@ function toChartWorkItem(item: ProjectWorkItemSummary): ChartWorkItem {
   return {
     id: String(item.id),
     numericId: item.id,
-    code: `WI-${String(item.id).padStart(3, "0")}`,
+    code: `${String(item.id).padStart(3, "0")}`,
     title: item.title,
     description: item.description.trim() || "설명이 아직 없습니다.",
     owner: item.assignee?.name ?? "미지정",
