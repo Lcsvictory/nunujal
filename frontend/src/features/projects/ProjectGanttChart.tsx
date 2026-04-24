@@ -529,7 +529,7 @@ export function ProjectGanttChart({
     }
 
     const shouldDelete = window.confirm(
-      `"${currentItem.title}" 워크아이템을 삭제하시겠습니까? 연결선만 정리하고 다른 워크아이템은 유지합니다.`,
+      `"${currentItem.title}" 워크아이템을 삭제하시겠습니까?`,
     );
     if (!shouldDelete) {
       return;
