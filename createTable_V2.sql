@@ -228,7 +228,7 @@ CREATE TABLE activity (
     target_user_id BIGINT,
 
     activity_category VARCHAR(20) NOT NULL DEFAULT 'BASIC',
-    activity_type VARCHAR(40) NOT NULL,
+    activity_type VARCHAR(255) NOT NULL,
     contribution_phase VARCHAR(20) NOT NULL,
 
     title VARCHAR(200) NOT NULL,
