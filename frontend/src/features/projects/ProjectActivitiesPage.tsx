@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './ProjectActivitiesPage.css';
 import { ActivityLogOverlay } from './ActivityLogOverlay';
+import { ProjectTaskEditOverlay } from './ProjectTaskEditOverlay';
 import { apiJsonRequest } from "../../lib/api";
+import { fetchProjectWorkItems } from "./api";
 import type { ProjectDetail } from './types';
 
 type ProjectActivitiesPageProps = {
@@ -16,8 +18,17 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
   
   const [isActivityOverlayOpen, setIsActivityOverlayOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<any>(null); // Quick modal for editing
+  const [hoveredTask, setHoveredTask] = useState<any>(null); // Small popup for task info
+  const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
 
   const [editContent, setEditContent] = useState('');
+  const [allTasks, setAllTasks] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchProjectWorkItems(project.id).then(res => {
+      setAllTasks(res.items);
+    }).catch(err => console.error(err));
+  }, [project.id]);
 
   const currentUserId = project.members.find(m => m.project_member_id === project.my_membership?.project_member_id)?.user_id;
 
@@ -125,36 +136,37 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
           filteredActivities.map((activity) => {
             const config = getTypeConfig(activity.activity_category);
             const isMine = activity.actor.id === currentUserId;
+            const isModified = activity.updated_at && new Date(activity.updated_at) > new Date(activity.occurred_at);
             
             return (
-              <div key={activity.id} className="activity-card" style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px' }}>
+              <div key={activity.id} className="activity-card" style={{ position: 'relative', marginTop: "1rem" }}>
+                <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px', zIndex: 10 }}>
                   {isMine && (
                     <>
-                      <button onClick={() => { setEditingActivity(activity); setEditContent(activity.content); }} style={{ fontSize: '0.8rem', padding: '2px 5px', cursor: 'pointer' }}>수정</button>
-                      <button onClick={() => handleDelete(activity.id)} style={{ fontSize: '0.8rem', padding: '2px 5px', cursor: 'pointer', color: 'red' }}>삭제</button>
+                      <button onClick={(e) => { e.stopPropagation(); setEditingActivity(activity); setEditContent(activity.content); }} style={{ fontSize: '0.8rem', padding: '4px 8px', cursor: 'pointer', background: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db', borderRadius: '4px', fontWeight: 'bold' }}>수정</button>
+                      <button onClick={(e) => { e.stopPropagation(); handleDelete(activity.id); }} style={{ fontSize: '0.8rem', padding: '4px 8px', cursor: 'pointer', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '4px', fontWeight: 'bold' }}>삭제</button>
                     </>
                   )}
                   {activity.activity_category === 'PEER_SUPPORT' && activity.review_state === 'UNDER_REVIEW' && activity.target_user?.id === currentUserId && (
                     <button 
-                      onClick={async () => {
+                      onClick={async (e) => {
+                        e.stopPropagation();
                         try {
                           await apiJsonRequest(`/api/projects/${project.id}/activities/${activity.id}/approve`, "POST", {});
-                          onRefresh();
+                          if (onRefresh) onRefresh();
                         } catch(e) {
                           alert("승인 실패");
                         }
                       }} 
-                      style={{ fontSize: '0.8rem', padding: '2px 8px', cursor: 'pointer', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>
+                      style={{ fontSize: '0.8rem', padding: '4px 8px', cursor: 'pointer', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>
                       ✓ 승인
                     </button>
                   )}
                 </div>
-                <div className="activity-card-header">
+                <div className="activity-card-header" style={{ position: 'relative', minHeight: '30px' }}>
                   <span className={`activity-badge ${config.colorClass}`}>
                     {config.label}
                   </span>
-                  <span className="activity-time">{new Date(activity.occurred_at).toLocaleString()}</span>
                 </div>
                 
                 <div className="activity-card-body">
@@ -169,9 +181,13 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
                           key={w.id}
                           style={{ display: 'inline-flex', alignItems: 'center', background: '#e0e7ff', color: '#4338ca', padding: '0.2rem 0.6rem', borderRadius: '9999px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', marginRight: '0.4rem', border: '1px solid #c7d2fe', transition: 'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }} 
                           title="클릭하여 할일 정보 보기"
-                          onClick={() => alert(`[할일 정보]\n제목: ${w.title}`)}
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setPopupPos({ x: rect.left + window.scrollX, y: rect.bottom + window.scrollY + 10 });
+                            setHoveredTask(w);
+                          }}
                         >
-                          📌 {w.title}
+                          {w.title}
                         </span>
                       ))}
                     </span>
@@ -202,6 +218,27 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
                     </div>
                   )}
                 </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '1rem', borderTop: '1px solid #f3f4f6', paddingTop: '0.8rem' }}>
+                  <div className="activity-tags" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    {activity.activity_type.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string) => (
+                      <span key={t} style={{ background: '#e0e7ff', color: '#4338ca', padding: '0.2rem 0.5rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                        #{t}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.2rem' }}>
+                    {isModified ? (
+                      <span style={{ fontSize: '0.8rem', color: '#6b7280', fontWeight: 'bold' }}>
+                        {new Date(activity.updated_at).toLocaleString()} (수정됨)
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.8rem', color: '#6b7280', fontWeight: 'bold' }}>
+                        {new Date(activity.occurred_at).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             );
           })
@@ -231,6 +268,43 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
             if (onRefresh) onRefresh();
           }}
         />
+      )}
+
+      {hoveredTask && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999 }} onClick={() => setHoveredTask(null)}>
+          <div 
+            style={{ 
+              position: 'absolute', top: popupPos.y, left: popupPos.x, background: '#fff', 
+              border: '1px solid #ddd', borderRadius: '8px', padding: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', 
+              zIndex: 1000, width: '280px', pointerEvents: 'auto' 
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+              <h4 style={{ margin: 0, fontSize: '14px', color: '#111' }}>{hoveredTask.title}</h4>
+              <button 
+                onClick={() => setHoveredTask(null)} 
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', color: '#888', padding: 0 }}
+              >&times;</button>
+            </div>
+            
+            {(() => {
+               const detail = allTasks.find(t => t.id === hoveredTask.id);
+               return detail ? (
+                 <div style={{ fontSize: '12px', color: '#444' }}>
+                   {detail.description && <p style={{ margin: '0 0 8px 0' }}>{detail.description}</p>}
+                   <div style={{ background: '#f5f5f5', padding: '6px', borderRadius: '4px' }}>
+                     {(detail.timeline_start_date || detail.timeline_end_date) && (
+                       <p style={{ margin: 0 }}><strong>기간:</strong> {detail.timeline_start_date || '?'} ~ {detail.timeline_end_date || '?'}</p>
+                     )}
+                   </div>
+                 </div>
+               ) : (
+                 <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>데이터를 불러오는 중입니다...</p>
+               );
+            })()}
+          </div>
+        </div>
       )}
     </div>
   );
