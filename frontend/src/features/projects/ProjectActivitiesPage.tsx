@@ -3,7 +3,7 @@ import './ProjectActivitiesPage.css';
 import { ActivityLogOverlay } from './ActivityLogOverlay';
 import { ProjectTaskEditOverlay } from './ProjectTaskEditOverlay';
 import { apiJsonRequest } from "../../lib/api";
-import { fetchProjectWorkItems } from "./api";
+import { fetchProjectWorkItems, toggleActivityReaction } from "./api";
 import type { ProjectDetail } from './types';
 
 type ProjectActivitiesPageProps = {
@@ -31,6 +31,15 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
   }, [project.id]);
 
   const currentUserId = project.members.find(m => m.project_member_id === project.my_membership?.project_member_id)?.user_id;
+
+  const handleToggleReaction = async (activityId: number, reactionType: "CONFIRMED" | "HELPFUL" | "AWESOME") => {
+    try {
+      await toggleActivityReaction(project.id, activityId, reactionType);
+      if (onRefresh) onRefresh();
+    } catch (e: any) {
+      alert(e.message || "Failed to toggle reaction");
+    }
+  };
 
   const activities = project.overview.recent_activities || [];
 
@@ -220,12 +229,48 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '1rem', borderTop: '1px solid #f3f4f6', paddingTop: '0.8rem' }}>
-                  <div className="activity-tags" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                    {activity.activity_type.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string) => (
-                      <span key={t} style={{ background: '#e0e7ff', color: '#4338ca', padding: '0.2rem 0.5rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
-                        #{t}
-                      </span>
-                    ))}
+                  <div className="activity-tags-and-reactions" style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div className="activity-tags" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      {activity.activity_type.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string) => (
+                        <span key={t} style={{ background: '#e0e7ff', color: '#4338ca', padding: '0.2rem 0.5rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                          #{t}
+                        </span>
+                      ))}
+                    </div>
+                    {/* Reactions */}
+                    <div className="activity-reactions" style={{ display: 'flex', gap: '0.4rem' }}>
+                      {[
+                        { type: 'CONFIRMED', icon: '👍', label: '인정함' },
+                        { type: 'HELPFUL', icon: '🙏', label: '큰 도움' },
+                        { type: 'AWESOME', icon: '🔥', label: '훌륭해요' }
+                      ].map(rx => {
+                        const count = activity.reactions?.filter(r => r.reaction_type === rx.type).length || 0;
+                        const hasReacted = activity.reactions?.some(r => r.reaction_type === rx.type && r.reactor_user_id === currentUserId);
+                        return (
+                          <button
+                            key={rx.type}
+                            onClick={() => handleToggleReaction(activity.id, rx.type as any)}
+                            style={{
+                              background: hasReacted ? '#fee2e2' : '#f3f4f6',
+                              color: hasReacted ? '#b91c1c' : '#4b5563',
+                              border: `1px solid ${hasReacted ? '#fca5a5' : '#e5e7eb'}`,
+                              padding: '0.2rem 0.5rem',
+                              borderRadius: '12px',
+                              fontSize: '0.75rem',
+                              fontWeight: 'bold',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.2rem'
+                            }}
+                          >
+                            <span>{rx.icon}</span>
+                            <span>{rx.label}</span>
+                            {count > 0 && <span style={{ marginLeft: '0.2rem' }}>{count}</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.2rem' }}>
                     {isModified ? (

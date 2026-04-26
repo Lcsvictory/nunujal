@@ -61,6 +61,10 @@ export type ProjectRecentActivity = {
     title: string;
   }[];
   evidences?: any[];
+  reactions?: {
+    reactor_user_id: number;
+    reaction_type: string;
+  }[];
 };
 
 export type ProjectOverview = {

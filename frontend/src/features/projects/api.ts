@@ -156,3 +156,15 @@ export function reviewProjectJoinRequest(
     payload
   );
 }
+
+export async function toggleActivityReaction(
+  projectId: number,
+  activityId: number,
+  reactionType: "CONFIRMED" | "HELPFUL" | "AWESOME"
+) {
+  return await apiJsonRequest(
+    `/api/projects/${projectId}/activities/${activityId}/reactions`,
+    "POST",
+    { reaction_type: reactionType }
+  );
+}
