@@ -1136,6 +1136,7 @@ def get_project(
                             "activity_type": activity.activity_type,
                             "review_state": activity.review_state,
                             "occurred_at": activity.occurred_at.isoformat(),
+                            "updated_at": activity.updated_at.isoformat(),
                             "activity_category": activity.activity_category,
                             "actor": {
                                 "id": actor.id,

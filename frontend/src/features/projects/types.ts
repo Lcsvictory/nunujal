@@ -47,6 +47,7 @@ export type ProjectRecentActivity = {
   activity_type: string;
   review_state: string;
   occurred_at: string;
+  updated_at: string;
   actor: {
     id: number;
     name: string;
