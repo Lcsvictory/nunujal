@@ -330,6 +330,9 @@ export function ProjectOverviewPage({
                         )}
                         <span>{formatActivityType(activity.activity_type)}</span>
                         <span>{formatDateTime(activity.occurred_at)}</span>
+                        {activity.updated_at && new Date(activity.updated_at) > new Date(activity.occurred_at) && (
+                          <span style={{ fontSize: '0.8rem', color: '#666', fontStyle: 'italic' }}>(수정됨)</span>
+                        )}
                         <span>{(activity.work_items && activity.work_items.length > 0) ? `[${activity.work_items.map(w => w.title).join(', ')}]` : "연결된 업무 없음"}</span>
                       </div>
                     </div>

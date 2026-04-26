@@ -12,6 +12,7 @@ type ProjectTaskEditOverlayProps = {
   onUpdated: () => Promise<void> | void;
   projectId: number;
   task: ProjectWorkItemSummary | null;
+  readOnly?: boolean;
 };
 
 export function ProjectTaskEditOverlay({
@@ -20,6 +21,7 @@ export function ProjectTaskEditOverlay({
   onUpdated,
   projectId,
   task,
+  readOnly = false,
 }: ProjectTaskEditOverlayProps) {
   const [formState, setFormState] = useState<UpdateProjectWorkItemPayload>({
     title: "",
@@ -111,6 +113,7 @@ export function ProjectTaskEditOverlay({
       description={`${task.title} 태스크 정보를 수정합니다.`}
     >
       <form className="overlay-form" onSubmit={handleSubmit}>
+        <fieldset disabled={readOnly} style={{ border: "none", padding: 0, margin: 0 }}>
         <label className="field">
           <span>할일 제목</span>
           <input
@@ -228,13 +231,22 @@ export function ProjectTaskEditOverlay({
         {errorMessage ? <p className="form-feedback form-feedback-error">{errorMessage}</p> : null}
 
         <div className="overlay-actions">
-          <button type="button" className="button button-ghost" onClick={onClose}>
-            취소
-          </button>
-          <button type="submit" className="button button-primary" disabled={isSubmitting}>
-            {isSubmitting ? "저장 중..." : "수정 완료"}
-          </button>
+          {!readOnly && (
+            <button type="button" className="button button-ghost" onClick={onClose}>
+              취소
+            </button>
+          )}
+          {readOnly ? (
+            <button type="button" className="button button-primary" onClick={onClose}>
+              닫기
+            </button>
+          ) : (
+            <button type="submit" className="button button-primary" disabled={isSubmitting}>
+              {isSubmitting ? "저장 중..." : "수정 완료"}
+            </button>
+          )}
         </div>
+      </fieldset>
       </form>
     </Overlay>
   );

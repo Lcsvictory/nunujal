@@ -31,10 +31,23 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
   const [evidenceDesc, setEvidenceDesc] = useState(initialEv.description || '');
   const [resourceURL, setResourceUrl] = useState(initialEv.resource_url || '');
 
-  const [activityType, setActivityType] = useState<string>(editContext?.activity_type || 'FINALIZATION');
-  const [customActivityType, setCustomActivityType] = useState("");
+  const [tags, setTags] = useState<string[]>(
+    editContext?.activity_type ? editContext.activity_type.split(',').map((t: string) => t.trim()).filter(Boolean) : []
+  );
+  const [tagInput, setTagInput] = useState("");
 
-  const PREDEFINED_TYPES = ['MATERIAL_COLLECTION', 'MEETING_RECORD', 'CONTENT_EDITING', 'FINALIZATION'];
+  const addTag = (e?: React.SyntheticEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = tagInput.trim();
+    if (trimmed && !tags.includes(trimmed)) {
+      setTags([...tags, trimmed]);
+    }
+    setTagInput("");
+  };
+
+  const removeTag = (tagToRemove: string) => {
+    setTags(tags.filter(t => t !== tagToRemove));
+  };
 
   useEffect(() => {
     fetchProjectWorkItems(projectId).then(res => {
@@ -92,7 +105,7 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
         await apiJsonRequest(`/api/projects/${projectId}/activities/${editContext.id}`, 'PUT', {
            content,
            activity_category: selectedCategory,
-           activity_type: activityType,
+           activity_type: tags.join(', '),
            evidences
         });
       } else {
@@ -100,7 +113,7 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
         work_item_ids: selectedCategory === 'COMMON' ? [] : selectedTaskIds,
         category: selectedCategory,
         target_user_id: selectedCategory === 'PEER_SUPPORT' && tasks.find(t => t.id === selectedTaskIds[0])?.assignee?.id || null,
-        activity_type: activityType,
+        activity_type: tags.join(', '),
         contribution_phase: 'FINALIZATION',
         title: 'Task Activity Record',
         content,
@@ -208,43 +221,42 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
         </label>
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
-          활동 성격:
-          <select 
-            value={PREDEFINED_TYPES.includes(activityType) ? activityType : "OTHER"} 
-            onChange={e => {
-              if (e.target.value !== "OTHER") {
-                setActivityType(e.target.value);
-                setCustomActivityType("");
-              } else {
-                setActivityType("");
-              }
-            }} 
-            style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}
-          >
-            <option value="MATERIAL_COLLECTION">자료 수집</option>
-            <option value="MEETING_RECORD">회의 기록</option>
-            <option value="CONTENT_EDITING">콘텐츠 편집</option>
-            <option value="FINALIZATION">최종 정리</option>
-            <option value="OTHER">기타 (직접 입력)</option>
-          </select>
-        </label>
-        
-        {!PREDEFINED_TYPES.includes(activityType) && (
-          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-            기타 성격 (직접 입력):
+          활동 성격 태그:
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+            {tags.map(tag => (
+              <span key={tag} style={{
+                background: '#e0e0e0', padding: '0.2rem 0.5rem', borderRadius: '12px', fontSize: '0.9rem',
+                display: 'inline-flex', alignItems: 'center', gap: '0.3rem'
+              }}>
+                #{tag}
+                <button type="button" onClick={() => removeTag(tag)} style={{
+                  background: 'none', border: 'none', cursor: 'pointer', padding: '0', color: '#555', fontWeight: 'bold'
+                }}>&times;</button>
+              </span>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
             <input 
               type="text" 
-              value={customActivityType} 
-              onChange={e => {
-                setCustomActivityType(e.target.value);
-                setActivityType(e.target.value);
-              }} 
-              placeholder="" 
-              style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }} 
-              required
+              value={tagInput} 
+              onChange={e => setTagInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addTag();
+                }
+              }}
+              onBlur={addTag}
+              placeholder="태그 입력 후 Enter" 
+              style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc', flex: 1 }} 
             />
-          </label>
-        )}
+            <button type="button" onClick={addTag} style={{
+              padding: '0.5rem 1rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer'
+            }}>
+              추가
+            </button>
+          </div>
+        </label>
 
         {/* Evidence Attachment */}
         <div style={{ padding: '1rem', border: '1px solid #ddd', borderRadius: '4px', backgroundColor: 'transparent' }}>

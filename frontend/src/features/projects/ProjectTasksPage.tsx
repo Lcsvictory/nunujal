@@ -532,6 +532,11 @@ function TaskCard({
           {item.description}
         </div>
       )}
+      {(item.timeline_start_date || item.timeline_end_date) && (
+        <div style={{ fontSize: "11px", color: "#4b5563", marginTop: "6px", marginBottom: "4px", display: "flex", alignItems: "center", gap: "4px", fontWeight: "500", backgroundColor: "#f3f4f6", padding: "4px 6px", borderRadius: "4px", width: "fit-content" }}>
+          <span>📅 {item.timeline_start_date} ~ {item.timeline_end_date}</span>
+        </div>
+      )}
       <div className="p-task-card-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "8px" }}>
         <div className="p-task-priority" style={{ paddingBottom: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
           {item.priority === "HIGH" && (
