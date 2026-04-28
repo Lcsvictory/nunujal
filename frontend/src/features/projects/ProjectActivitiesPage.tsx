@@ -185,7 +185,7 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
                   )}
                                     {(activity.work_items && activity.work_items.length > 0) ? (
                     <span style={{ margin: '0 0.4rem' }}>
-                      {activity.work_items.map((w: any) => (
+                      {[...activity.work_items].sort((a: any, b: any) => a.id - b.id).map((w: any) => (
                         <span 
                           key={w.id}
                           style={{ display: 'inline-flex', alignItems: 'center', background: '#e0e7ff', color: '#4338ca', padding: '0.2rem 0.6rem', borderRadius: '9999px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', marginRight: '0.4rem', border: '1px solid #c7d2fe', transition: 'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }} 
@@ -230,13 +230,6 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '1rem', borderTop: '1px solid #f3f4f6', paddingTop: '0.8rem' }}>
                   <div className="activity-tags-and-reactions" style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <div className="activity-tags" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                      {activity.activity_type.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string) => (
-                        <span key={t} style={{ background: '#e0e7ff', color: '#4338ca', padding: '0.2rem 0.5rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
-                          #{t}
-                        </span>
-                      ))}
-                    </div>
                     {/* Reactions */}
                     <div className="activity-reactions" style={{ display: 'flex', gap: '0.4rem' }}>
                       {[
@@ -270,6 +263,13 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
                           </button>
                         );
                       })}
+                    </div>
+                    <div className="activity-tags" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      {activity.activity_type.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string) => (
+                        <span key={t} style={{ background: '#e0e7ff', color: '#4338ca', padding: '0.2rem 0.5rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                          #{t}
+                        </span>
+                      ))}
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.2rem' }}>
@@ -334,13 +334,14 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
             </div>
             
             {(() => {
-               const detail = allTasks.find(t => t.id === hoveredTask.id);
+               const detail = hoveredTask;
                return detail ? (
                  <div style={{ fontSize: '12px', color: '#444' }}>
                    {detail.description && <p style={{ margin: '0 0 8px 0' }}>{detail.description}</p>}
                    <div style={{ background: '#f5f5f5', padding: '6px', borderRadius: '4px' }}>
+                     <p style={{ margin: '0 0 4px 0' }}><strong>담당자:</strong> {detail.assignee?.name || '없음'}</p>
                      {(detail.timeline_start_date || detail.timeline_end_date) && (
-                       <p style={{ margin: 0 }}><strong>기간:</strong> {detail.timeline_start_date || '?'} ~ {detail.timeline_end_date || '?'}</p>
+                       <p style={{ margin: 0 }}><strong>기간:</strong> {detail.timeline_start_date?.split('T')[0] || '?'} ~ {detail.timeline_end_date?.split('T')[0] || '?'}</p>
                      )}
                    </div>
                  </div>

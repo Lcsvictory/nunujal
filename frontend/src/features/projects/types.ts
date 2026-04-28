@@ -35,6 +35,7 @@ export type ProjectMemberSummary = {
   user_id: number;
   name: string;
   email: string;
+  profile_image_url?: string;
   project_role: string;
   position_label: string;
 };
