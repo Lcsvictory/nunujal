@@ -162,6 +162,7 @@ CREATE TABLE work_item (
     due_date DATE,
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
+    deleted_at TIMESTAMP,
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -722,4 +723,21 @@ CREATE TABLE evidence (
                 'DISPUTED'
             )
         )
+);
+
+CREATE TABLE activity_reaction (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    activity_id BIGINT NOT NULL REFERENCES activity(id) ON DELETE CASCADE,
+    reactor_user_id BIGINT NOT NULL REFERENCES app_user(id),
+    reaction_type VARCHAR(30) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_activity_reaction_user UNIQUE (activity_id, reactor_user_id, reaction_type),
+    CONSTRAINT chk_activity_reaction_type CHECK (
+        reaction_type IN (
+            'CONFIRMED',
+            'HELPFUL',
+            'AWESOME'
+        )
+    )
 );

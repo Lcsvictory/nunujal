@@ -73,6 +73,9 @@ class AppUser(Base):
         back_populates="actor_user",
         foreign_keys="Activity.actor_user_id",
     )
+    activity_reactions: Mapped[list["ActivityReaction"]] = relationship(
+        back_populates="reactor_user"
+    )
     targeted_activities: Mapped[list["Activity"]] = relationship(
         back_populates="target_user",
         foreign_keys="Activity.target_user_id",
@@ -253,6 +256,7 @@ class WorkItem(Base):
     due_date: Mapped[date] = mapped_column(DATE, nullable=True)
     started_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=True)
     completed_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=True)
+    deleted_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
 
@@ -386,6 +390,11 @@ class Activity(Base):
         secondary="activity_work_item_link", 
         back_populates="activities"
     )
+    reactions: Mapped[list["ActivityReaction"]] = relationship(
+        back_populates="activity",
+        cascade="all, delete-orphan",
+        order_by="ActivityReaction.created_at"
+    )
     actor_user: Mapped[AppUser] = relationship(back_populates="activities", foreign_keys=[actor_user_id])    
     target_user: Mapped["AppUser"] = relationship(back_populates="targeted_activities", foreign_keys=[target_user_id])    
     last_edited_by_user: Mapped["AppUser"] = relationship(
@@ -404,6 +413,26 @@ class Activity(Base):
         back_populates="activity",
         cascade="all, delete-orphan",
     )
+
+
+class ActivityReaction(Base):
+    __tablename__ = "activity_reaction"
+    __table_args__ = (
+        CheckConstraint(
+            "reaction_type IN ('CONFIRMED', 'HELPFUL', 'AWESOME')",
+            name="chk_activity_reaction_type",
+        ),
+        UniqueConstraint("activity_id", "reactor_user_id", "reaction_type", name="uq_activity_reaction_user"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT, Identity(always=True), primary_key=True)
+    activity_id: Mapped[int] = mapped_column(ForeignKey("activity.id", ondelete="CASCADE"), nullable=False)
+    reactor_user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=False)
+    reaction_type: Mapped[str] = mapped_column(VARCHAR(30), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+    activity: Mapped["Activity"] = relationship(back_populates="reactions")
+    reactor_user: Mapped["AppUser"] = relationship(back_populates="activity_reactions")
 
 
 class ActivityRevisionHistory(Base):

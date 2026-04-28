@@ -7,7 +7,7 @@ from datetime import date, datetime, time, timedelta
 from fastapi import APIRouter, Header, HTTPException, Request as FastAPIRequest, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel
 from sqlalchemy import func
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 import app.models as models
 from app.core.config import get_settings
@@ -307,6 +307,8 @@ def _serialize_project_work_item(work_item: models.WorkItem) -> dict[str, object
     contributors_dict = {}
     if hasattr(work_item, "activities"):
         for act in work_item.activities:
+            if act.source_type == "SYSTEM_IMPORTED":
+                continue
             actor = act.actor_user
             if actor and (not assignee or actor.id != assignee.id):
                 contributors_dict[actor.id] = {
@@ -354,7 +356,7 @@ def _build_project_work_item_snapshot(
         .options(
             selectinload(models.WorkItem.activities).selectinload(models.Activity.actor_user)
         )
-        .filter(models.WorkItem.project_id == project_id)
+        .filter(models.WorkItem.project_id == project_id, models.WorkItem.deleted_at == None)
         .order_by(models.WorkItem.created_at.asc(), models.WorkItem.id.asc())
         .all()
     )
@@ -846,7 +848,7 @@ def delete_project_work_item(
         )
         session.add(activity)
 
-        session.delete(work_item)
+        work_item.deleted_at = now
         session.commit()
 
         _broadcast_project_work_item_change(project_id, "work_item_deleted", work_item_id)
@@ -1068,7 +1070,7 @@ def get_project(
 
         work_items = (
             session.query(models.WorkItem)
-            .filter(models.WorkItem.project_id == project_id)
+            .filter(models.WorkItem.project_id == project_id, models.WorkItem.deleted_at == None)
             .order_by(models.WorkItem.created_at.asc())
             .all()
         )
@@ -1084,6 +1086,9 @@ def get_project(
             session.query(models.Activity, models.AppUser, TargetUser)
             .join(models.AppUser, models.AppUser.id == models.Activity.actor_user_id)
             .outerjoin(TargetUser, TargetUser.id == models.Activity.target_user_id)
+            .options(joinedload(models.Activity.work_items).joinedload(models.WorkItem.assignee_user))
+            .options(joinedload(models.Activity.evidence_items))
+            .options(joinedload(models.Activity.reactions))
             .filter(
                 models.Activity.project_id == project_id,
                 models.Activity.source_type != "SYSTEM_IMPORTED"
@@ -1150,6 +1155,12 @@ def get_project(
                                 {
                                     "id": w.id,
                                     "title": w.title,
+                                    "description": w.description,
+                                    "assignee": {
+                                        "name": w.assignee_user.name
+                                    } if w.assignee_user else None,
+                                    "timeline_start_date": _get_work_item_timeline_dates(w)[0].isoformat(),
+                                    "timeline_end_date": _get_work_item_timeline_dates(w)[1].isoformat(),
                                 } for w in activity.work_items
                             ],
                             "evidences": [
@@ -1159,7 +1170,13 @@ def get_project(
                                     "description": ev.description,
                                     "resource_url": ev.resource_url,
                                 }
-                                for ev in activity.evidence_items
+                                for ev in getattr(activity, 'evidence_items', [])
+                            ],
+                            "reactions": [
+                                {
+                                    "reactor_user_id": r.reactor_user_id,
+                                    "reaction_type": r.reaction_type
+                                } for r in getattr(activity, 'reactions', [])
                             ]
                         }
                         for activity, actor, target_user in recent_activities_tuples
@@ -1319,6 +1336,7 @@ def list_project_members(
                 "user_id": user.id,
                 "name": user.name,
                 "email": user.email,
+                "profile_image_url": user.profile_image_url,
                 "project_role": mem.project_role,
                 "position_label": mem.position_label,
             })
@@ -1641,6 +1659,14 @@ def update_activity(
             activity.activity_category = payload["activity_category"]
         if "activity_type" in payload:
             activity.activity_type = payload["activity_type"]
+        if "work_item_ids" in payload:
+            work_items = session.query(models.WorkItem).filter(
+                models.WorkItem.project_id == project_id,
+                models.WorkItem.id.in_(payload["work_item_ids"])
+            ).all()
+            activity.work_items = work_items
+        if "target_user_id" in payload:
+            activity.target_user_id = payload.get("target_user_id")
             
         if "evidences" in payload:
             session.query(models.Evidence).filter(models.Evidence.activity_id == activity.id).delete(synchronize_session=False)
@@ -1742,6 +1768,62 @@ def delete_activity(
         return {"status": "success"}
     except Exception as exc:
         session.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        session.close()
+
+class ActivityReactionRequest(BaseModel):
+    reaction_type: str
+
+@router.post("/{project_id}/activities/{activity_id}/reactions")
+def toggle_activity_reaction(
+    project_id: int,
+    activity_id: int,
+    payload: ActivityReactionRequest,
+    req: FastAPIRequest,
+    authorization: str | None = Header(None, alias="Authorization"),
+):
+    session = get_session()
+    try:
+        user = get_authenticated_user(request=req, session=session, authorization=authorization)
+        
+        valid_reactions = {"CONFIRMED", "HELPFUL", "AWESOME"}
+        if payload.reaction_type not in valid_reactions:
+            raise HTTPException(status_code=400, detail="Invalid reaction type")
+
+        activity = session.query(models.Activity).filter(
+            models.Activity.project_id == project_id,
+            models.Activity.id == activity_id
+        ).first()
+
+        if not activity:
+            raise HTTPException(status_code=404, detail="Activity not found.")
+
+        existing = session.query(models.ActivityReaction).filter(
+            models.ActivityReaction.activity_id == activity_id,
+            models.ActivityReaction.reactor_user_id == user.id,
+            models.ActivityReaction.reaction_type == payload.reaction_type
+        ).first()
+
+        if existing:
+            session.delete(existing)
+        else:
+            new_reaction = models.ActivityReaction(
+                activity_id=activity_id,
+                reactor_user_id=user.id,
+                reaction_type=payload.reaction_type
+            )
+            session.add(new_reaction)
+
+        session.commit()
+        return {"status": "success"}
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as exc:
+        session.rollback()
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(exc))
     finally:
         session.close()

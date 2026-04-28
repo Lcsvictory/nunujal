@@ -113,7 +113,7 @@ def create_project_join_request(
             membership_created = True
         else:
             if join_request and join_request.request_status == "PENDING":
-                raise HTTPException(status_code=409, detail="A pending join request already exists for this project.")
+                raise HTTPException(status_code=409, detail="해당 프로젝트에 대한 보류 중인 가입 요청이 이미 있습니다.")
 
             if join_request is None:
                 join_request = models.ProjectJoinRequest(
