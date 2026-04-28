@@ -77,11 +77,8 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
   }, [tasks, searchQuery, selectedCategory, currentUserId]);
 
   
-  // 선택 카테고리가 COMMON이 되면 종속된 할일 초기화
   useEffect(() => {
-    if (selectedCategory === 'COMMON') {
-      setSelectedTaskIds([]);
-    }
+    setSelectedTaskIds([]);
   }, [selectedCategory]);
 
   const overlayTitle = editContext ? "활동 내역 수정하기" : "행동 기록 남기기";
@@ -106,7 +103,9 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
            content,
            activity_category: selectedCategory,
            activity_type: tags.join(', '),
-           evidences
+           evidences,
+           work_item_ids: selectedCategory === 'COMMON' ? [] : selectedTaskIds,
+           target_user_id: selectedCategory === 'PEER_SUPPORT' ? (tasks.find(t => t.id === selectedTaskIds[0])?.assignee?.id || editContext.target_user?.id || null) : null
         });
       } else {
         const payload = {
@@ -140,10 +139,17 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         
         {/* Category Selection */}
-        {!initialTaskId && !editContext && (
+        {!initialTaskId && (
           <label style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             기여 유형:
-            <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value as 'BASIC' | 'PEER_SUPPORT' | 'COMMON')} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select 
+              value={selectedCategory} 
+              onChange={e => {
+                setSelectedCategory(e.target.value as 'BASIC' | 'PEER_SUPPORT' | 'COMMON');
+                setSelectedTaskIds([]);
+              }} 
+              style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}
+            >
               <option value="BASIC">내 할일</option>
               <option value="PEER_SUPPORT">팀원 할일 지원</option>
               <option value="COMMON">공통 작업 (할일 매핑 없음)</option>
@@ -155,7 +161,7 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
         {selectedCategory !== 'COMMON' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.5rem', backgroundColor: '#f9f9f9', borderRadius: '4px' }}>
              <span style={{ fontWeight: 'bold' }}>대상 할일 선택</span>
-             {initialTaskId || editContext ? (
+             {initialTaskId ? (
                 <div style={{ padding: '0.5rem', background: '#fff', border: '1px solid #ddd', borderRadius: '4px' }}>
                   {tasks.find(x => x.id === selectedTaskIds[0])?.title || editContext?.work_items?.[0]?.title || '할일 없음'} 
                 </div>
@@ -184,20 +190,21 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
 {selectedTaskIds.length > 0 && (
   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.5rem' }}>
     {selectedTaskIds.map(id => {
-      const t = tasks.find(x => x.id === id);
+      let t = tasks.find(x => x.id === id);
+      if (!t && editContext?.work_items) {
+        t = editContext.work_items.find((x: any) => x.id === id);
+      }
       if (!t) return null;
       return (
         <div key={id} style={{ display: 'flex', alignItems: 'center', background: '#3b82f6', color: '#ffffff', padding: '0.3rem 0.8rem', borderRadius: '9999px', fontSize: '0.85rem', fontWeight: 'bold', boxShadow: '0 1px 2px rgba(0,0,0,0.1)' }}>
-          [{t.status}] {t.title}
-          {!editContext && (
-            <button 
-              type="button" 
-              onClick={() => setSelectedTaskIds(prev => prev.filter(x => x !== id))}
-              style={{ marginLeft: '0.5rem', background: 'transparent', border: 'none', color: '#ffffff', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.1rem', lineHeight: '1', padding: '0' }}
-            >
-              &times;
-            </button>
-          )}
+          [{t.status || '상태 없음'}] {t.title}
+          <button 
+            type="button" 
+            onClick={() => setSelectedTaskIds(prev => prev.filter(x => x !== id))}
+            style={{ marginLeft: '0.5rem', background: 'transparent', border: 'none', color: '#ffffff', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.1rem', lineHeight: '1', padding: '0' }}
+          >
+            &times;
+          </button>
         </div>
       );
     })}
