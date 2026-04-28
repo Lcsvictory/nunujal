@@ -676,6 +676,9 @@ export function ProjectGanttChart({
     ganttInstance.config.initial_scroll = false;
     ganttInstance.config.wide_form = true;
     ganttInstance.config.grid_width = 356;
+    ganttInstance.config.grid_resize = true;
+    ganttInstance.config.autofit = false;
+    ganttInstance.config.keep_grid_width = false;
     ganttInstance.config.row_height = 56;
     ganttInstance.config.bar_height = 28;
     ganttInstance.config.show_links = true;
@@ -804,9 +807,10 @@ export function ProjectGanttChart({
     ];
     ganttInstance.config.columns = [
       { name: "text", label: "워크아이템", tree: true, width: 210, resize: true },
-      { name: "owner", label: "담당자", align: "center", width: 82 },
-      { name: "status_label", label: "상태", align: "center", width: 64 },
+      { name: "owner", label: "담당자", align: "center", width: 82, resize: true },
+      { name: "status_label", label: "상태", align: "center", width: 64, resize: true },
     ];
+    ganttInstance.config.min_duration = 24 * 60 * 60 * 1000; // 드래그 시 최소 하루 단위 강제
     ganttInstance.templates.scale_cell_class = (date) => (date.getDate() === 1 ? "gantt-month-boundary-cell" : "");
     ganttInstance.templates.timeline_cell_class = (_task, date) => {
       if (
@@ -1146,7 +1150,7 @@ export function ProjectGanttChart({
         return;
       }
       ganttRef.current.setSizes();
-      if (shouldCenterTodayRef.current || !isDateVisible(ganttRef.current, today)) {
+      if (shouldCenterTodayRef.current) {
         centerTimelineOnDate(ganttRef.current, today);
         shouldCenterTodayRef.current = false;
       } else {

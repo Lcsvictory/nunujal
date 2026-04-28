@@ -113,6 +113,7 @@ export function ProjectTaskCreateOverlay({
               setFormState((current) => ({ ...current, title: event.target.value }))
             }
             placeholder="할일의 제목을 입력하세요"
+            required
           />
         </label>
 
@@ -125,6 +126,7 @@ export function ProjectTaskCreateOverlay({
             }
             placeholder="상세 내용을 작성하세요."
             rows={4}
+            required
           />
         </label>
 

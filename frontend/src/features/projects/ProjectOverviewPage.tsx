@@ -143,35 +143,6 @@ export function ProjectOverviewPage({
 
   const completionRate = project?.overview.completion_rate ?? 0;
 
-  const summaryCards = useMemo(() => {
-    if (!project) {
-      return [];
-    }
-
-    return [
-      {
-        label: "프로젝트 기간",
-        value: formatDateRange(project.start_date, project.end_date),
-        note: "기본 일정 범위",
-      },
-      {
-        label: "팀원",
-        value: `${project.member_count}명`,
-        note: `팀장 포함 · ${project.my_membership.position_label}`,
-      },
-      {
-        label: "업무 현황",
-        value: `${project.overview.done_work_items} / ${project.overview.total_work_items}`,
-        note: "완료 업무 기준",
-      },
-      {
-        label: "참여 코드",
-        value: project.join_code,
-        note: `참여 정책: ${formatJoinPolicy(project.join_policy)}`,
-      },
-    ];
-  }, [project]);
-
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
@@ -244,14 +215,15 @@ export function ProjectOverviewPage({
             )}
           </div>
 
-          <div className="workspace-summary-grid">
-            {summaryCards.map((card) => (
-              <article key={card.label} className="workspace-summary-item">
-                <span>{card.label}</span>
-                <strong>{card.value}</strong>
-                <p>{card.note}</p>
-              </article>
-            ))}
+          <div className="workspace-summary-text" style={{ padding: "0 24px 24px 24px", display: "flex", flexDirection: "column", gap: "12px", fontSize: "1rem", lineHeight: "1.6" }}>
+            <p>
+              프로젝트 기간 : <strong>{formatDateRange(project.start_date, project.end_date)}</strong> <br/>
+              <strong>총 {project.member_count}명</strong>(내 직책: {project.my_membership.position_label})<br/> 
+            </p>
+            <div style={{ padding: "12px 16px", background: "var(--background-modifier-hover, rgba(0,0,0,0.05))", borderRadius: "8px", borderLeft: "4px solid var(--color-primary, #0066ff)", display: "inline-block", alignSelf: "flex-start" }}>
+              <span style={{ fontSize: "0.85rem", color: "var(--text-muted, #666)" }}>참여 코드 (정책: {formatJoinPolicy(project.join_policy)})</span><br/>
+              <strong style={{ fontSize: "1.25rem", letterSpacing: "1px", color: "var(--color-primary, #0066ff)" }}>{project.join_code}</strong>
+            </div>
           </div>
         </section>
 
@@ -259,7 +231,7 @@ export function ProjectOverviewPage({
           <section className="surface-panel workspace-progress-panel">
             <div className="section-heading">
               <div>
-                <p className="section-label">progress</p>
+                {/* <p className="section-label">진행률</p> */}
                 <h2>전체 진행률</h2>
               </div>
               <strong>{completionRate}%</strong>
@@ -268,7 +240,8 @@ export function ProjectOverviewPage({
             <div className="progress-track" aria-hidden="true">
               <div className="progress-fill" style={{ width: `${completionRate}%` }} />
             </div>
-
+            
+            &nbsp;
             <div className="progress-breakdown">
               <div>
                 <span>할일</span>
@@ -288,8 +261,9 @@ export function ProjectOverviewPage({
           <section className="surface-panel workspace-activity-panel">
             <div className="section-heading">
               <div>
-                <p className="section-label">activity</p>
+                {/* <p className="section-label">활동</p> */}
                 <h2>최근 활동</h2>
+                &nbsp;
               </div>
             </div>
 
