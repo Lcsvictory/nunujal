@@ -64,10 +64,44 @@ export function ProjectOverviewPage({
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<WorkspaceSection>("overview");
+  const [activeSection, setActiveSection] = useState<WorkspaceSection>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab") as WorkspaceSection;
+    if (tab && (navigationItems.some(item => item.key === tab) || tab === "profile")) {
+      return tab;
+    }
+    return "overview";
+  });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+
+  const handleSectionChange = (newSection: WorkspaceSection) => {
+    if (newSection === activeSection) return;
+    setActiveSection(newSection);
+    const url = new URL(window.location.href);
+    if (newSection === "overview") {
+      url.searchParams.delete("tab");
+    } else {
+      url.searchParams.set("tab", newSection);
+    }
+    window.history.pushState({}, "", url.toString());
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get("tab") as WorkspaceSection;
+      if (tab && (navigationItems.some(item => item.key === tab) || tab === "profile")) {
+        setActiveSection(tab);
+      } else {
+        setActiveSection("overview");
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   // ========== 프로젝트 웹소켓 현재 접속자 상태 관리 ==========
   const [activeUsers, setActiveUsers] = useState<any[]>([]);
@@ -134,7 +168,13 @@ export function ProjectOverviewPage({
   };
 
   useEffect(() => {
-    setActiveSection("overview");
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab") as WorkspaceSection;
+    if (tab && (navigationItems.some(item => item.key === tab) || tab === "profile")) {
+      setActiveSection(tab);
+    } else {
+      setActiveSection("overview");
+    }
   }, [projectId]);
 
   useEffect(() => {
@@ -349,11 +389,7 @@ export function ProjectOverviewPage({
       <section className="surface-panel workspace-placeholder-panel">
         <p className="section-label">prototype</p>
         <h1>{title}</h1>
-        <p>
-          이번 단계에서는 프로젝트 내부 레이아웃과 간트차트 프로토타입을 먼저
-          확인할 수 있도록 구성했습니다. 이 섹션은 다음 피드백 이후 구체화하면
-          됩니다.
-        </p>
+        
       </section>
     );
   };
@@ -410,7 +446,7 @@ export function ProjectOverviewPage({
           <button
             type="button"
             className="workspace-profile-trigger"
-            onClick={() => setActiveSection("profile")}
+            onClick={() => handleSectionChange("profile")}
           >
             {currentUser?.profile_image_url ? (
               <img
@@ -457,7 +493,7 @@ export function ProjectOverviewPage({
                   key={item.key}
                   type="button"
                   className={`workspace-nav-item ${isActive ? "workspace-nav-item-active" : ""}`}
-                  onClick={() => setActiveSection(item.key)}
+                  onClick={() => handleSectionChange(item.key)}
                   title={isSidebarCollapsed ? item.label : undefined}
                   aria-current={isActive ? "page" : undefined}
                 >
