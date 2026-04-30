@@ -46,25 +46,43 @@ export type ProjectRecentActivity = {
   content: string;
   activity_category: string;
   activity_type: string;
+  contribution_phase?: string;
   review_state: string;
+  credibility_level?: string;
+  source_type?: string;
+  version?: number;
   occurred_at: string;
+  created_at?: string;
   updated_at: string;
+  is_modified?: boolean;
   actor: {
     id: number;
     name: string;
+    profile_image_url?: string | null;
   };
   target_user: {
     id: number;
     name: string;
+    profile_image_url?: string | null;
   } | null;
   work_items: {
     id: number;
     title: string;
+    description?: string;
+    status?: string;
+    assignee?: {
+      id?: number;
+      name: string;
+      profile_image_url?: string | null;
+    } | null;
+    timeline_start_date?: string;
+    timeline_end_date?: string;
   }[];
   evidences?: any[];
   reactions?: {
     reactor_user_id: number;
     reaction_type: string;
+    created_at?: string;
   }[];
 };
 
@@ -114,6 +132,8 @@ export type ProjectWorkItemSummary = {
   timeline_start_date: string;
   timeline_end_date: string;
   duration_days: number;
+  parent_work_item_id: number | null;
+  gantt_sort_order: number;
   creator: {
     id: number;
     name: string;
@@ -146,17 +166,65 @@ export type ProjectWorkItemListResponse = {
   dependencies: ProjectWorkItemDependency[];
 };
 
+export type ProjectActivityListFilters = {
+  actor_user_id?: number | null;
+  target_user_id?: number | null;
+  author_scope?: "ALL" | "ME";
+  category?: string;
+  review_state?: string;
+  contribution_phase?: string;
+  credibility_level?: string;
+  source_type?: string;
+  work_item_id?: number | null;
+  work_item_ids?: string;
+  work_item_assignee_user_id?: number | null;
+  q?: string;
+  tag?: string;
+  date_from?: string;
+  date_to?: string;
+  has_evidence?: boolean | null;
+  evidence_type?: string;
+  has_reactions?: boolean | null;
+  reaction_type?: string;
+  reacted_by_me?: boolean | null;
+  modified?: boolean | null;
+  filter_operator?: "AND" | "OR";
+  limit?: number;
+  offset?: number;
+};
+
+export type ProjectActivityListResponse = {
+  project_id: number;
+  total: number;
+  count: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+  items: ProjectRecentActivity[];
+  available_tags: string[];
+};
+
 export type CreateProjectWorkItemPayload = {
   title: string;
   description: string;
   status: "TODO" | "IN_PROGRESS" | "DONE";
   priority: "LOW" | "MEDIUM" | "HIGH";
   assignee_user_id: number | null;
+  parent_work_item_id?: number | null;
+  gantt_sort_order?: number;
   timeline_start_date: string;
   timeline_end_date: string;
 };
 
 export type UpdateProjectWorkItemPayload = Partial<CreateProjectWorkItemPayload>;
+
+export type UpdateProjectWorkItemHierarchyPayload = {
+  items: {
+    work_item_id: number;
+    parent_work_item_id: number | null;
+    gantt_sort_order: number;
+  }[];
+};
 
 export type WorkItemMutationResponse = {
   message: string;

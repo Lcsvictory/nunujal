@@ -94,6 +94,15 @@ def create_jwt_token(user: models.AppUser) -> str:
     return f"{header_b64}.{payload_b64}.{signature_b64}"
 
 
+def _serialize_user(user: models.AppUser) -> dict[str, Any]:
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "profile_image_url": user.profile_image_url,
+    }
+
+
 def _upsert_google_user(session: Session, user_info: dict[str, Any]) -> models.AppUser:
     provider_user_id = user_info.get("sub")
     email = user_info.get("email")
@@ -295,15 +304,7 @@ def read_current_user(
         return JSONResponse(
             {
                 "authenticated": True,
-                "user": {
-                    "id": user.id,
-                    "email": user.email,
-                    "name": user.name,
-                    "provider": user.provider,
-                    "department": user.department,
-                    "profile_image_url": user.profile_image_url,
-                    "status": user.status,
-                },
+                "user": _serialize_user(user),
             }
         )
     finally:

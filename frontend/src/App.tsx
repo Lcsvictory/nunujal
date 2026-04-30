@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { LandingPage } from "./features/auth/LandingPage";
 import { LoginPage } from "./features/auth/LoginPage";
+import { MyPage } from "./features/auth/MyPage";
 import { ProjectOverviewPage } from "./features/projects/ProjectOverviewPage";
 import { ProjectsPage } from "./features/projects/ProjectsPage";
 import { isKnownPath, navigate, parseLocation } from "./lib/router";
@@ -30,6 +31,15 @@ export default function App() {
       <ProjectsPage
         onMoveToLogin={() => navigate("/login")}
         onOpenProject={(nextProjectId) => navigate(`/projects/${nextProjectId}`)}
+      />
+    );
+  }
+
+  if (screen === "my-page") {
+    return (
+      <MyPage
+        onMoveBack={() => navigate("/projects")}
+        onMoveToLogin={() => navigate("/login")}
       />
     );
   }

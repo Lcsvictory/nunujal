@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 import app.models as models
@@ -23,6 +24,38 @@ class CreateUserRequest(BaseModel):
 def create_tables() -> None:
     engine = get_engine()
     models.Base.metadata.create_all(bind=engine)
+    ensure_work_item_hierarchy_columns()
+
+
+def ensure_work_item_hierarchy_columns() -> None:
+    engine = get_engine()
+    inspector = inspect(engine)
+    if not inspector.has_table("work_item"):
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("work_item")}
+    dialect_name = engine.dialect.name
+
+    with engine.begin() as connection:
+        if "parent_work_item_id" not in existing_columns:
+            if dialect_name == "sqlite":
+                connection.execute(
+                    text("ALTER TABLE work_item ADD COLUMN parent_work_item_id BIGINT REFERENCES work_item(id) ON DELETE SET NULL")
+                )
+            else:
+                connection.execute(text("ALTER TABLE work_item ADD COLUMN parent_work_item_id BIGINT NULL"))
+                connection.execute(
+                    text(
+                        "ALTER TABLE work_item "
+                        "ADD CONSTRAINT fk_work_item_parent "
+                        "FOREIGN KEY (parent_work_item_id) REFERENCES work_item(id) ON DELETE SET NULL"
+                    )
+                )
+
+        if "gantt_sort_order" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE work_item ADD COLUMN gantt_sort_order INTEGER NOT NULL DEFAULT 0")
+            )
 
 
 def insert_dummy_data(session: Session) -> dict[str, int | str]:
@@ -182,6 +215,7 @@ def insert_dummy_data(session: Session) -> dict[str, int | str]:
         due_date=date(2026, 4, 10),
         started_at=now - timedelta(days=2),
         created_at=now - timedelta(days=3),
+        gantt_sort_order=0,
     )
     work_item_2 = models.WorkItem(
         project_id=project.id,
@@ -194,6 +228,7 @@ def insert_dummy_data(session: Session) -> dict[str, int | str]:
         due_date=date(2026, 4, 15),
         started_at=now - timedelta(days=1),
         created_at=now - timedelta(days=2),
+        gantt_sort_order=2,
     )
     work_item_3 = models.WorkItem(
         project_id=project.id,
@@ -206,6 +241,7 @@ def insert_dummy_data(session: Session) -> dict[str, int | str]:
         due_date=date(2026, 4, 12),
         started_at=now - timedelta(days=1),
         created_at=now - timedelta(days=5),
+        gantt_sort_order=1,
     )
     session.add_all([work_item_1, work_item_2, work_item_3])
     session.flush()

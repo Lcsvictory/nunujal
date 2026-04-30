@@ -77,10 +77,6 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
   }, [tasks, searchQuery, selectedCategory, currentUserId]);
 
   
-  useEffect(() => {
-    setSelectedTaskIds([]);
-  }, [selectedCategory]);
-
   const overlayTitle = editContext ? "활동 내역 수정하기" : "행동 기록 남기기";
   const contentPlaceholder = "어떤 활동을 진행했나요?";
 
@@ -227,8 +223,8 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
           />
         </label>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
-          활동 성격 태그:
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+          <span style={{ fontWeight: 'bold' }}>활동 성격 태그:</span>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
             {tags.map(tag => (
               <span key={tag} style={{
@@ -253,7 +249,6 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
                   addTag();
                 }
               }}
-              onBlur={addTag}
               placeholder="태그 입력 후 Enter" 
               style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc', flex: 1 }} 
             />
@@ -263,7 +258,7 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
               추가
             </button>
           </div>
-        </label>
+        </div>
 
         {/* Evidence Attachment */}
         <div style={{ padding: '1rem', border: '1px solid #ddd', borderRadius: '4px', backgroundColor: 'transparent' }}>

@@ -6,8 +6,8 @@ from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Header, HTTPException, Request as FastAPIRequest, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel
-from sqlalchemy import func
-from sqlalchemy.orm import Session, selectinload, joinedload
+from sqlalchemy import and_, func, or_
+from sqlalchemy.orm import Session, aliased, selectinload, joinedload
 
 import app.models as models
 from app.core.config import get_settings
@@ -57,6 +57,8 @@ class CreateWorkItemRequest(BaseModel):
     status: str = "TODO"
     priority: str = "MEDIUM"
     assignee_user_id: int | None = None
+    parent_work_item_id: int | None = None
+    gantt_sort_order: int | None = None
     timeline_start_date: date
     timeline_end_date: date
 
@@ -67,6 +69,8 @@ class UpdateWorkItemRequest(BaseModel):
     status: str | None = None
     priority: str | None = None
     assignee_user_id: int | None = None
+    parent_work_item_id: int | None = None
+    gantt_sort_order: int | None = None
     timeline_start_date: date | None = None
     timeline_end_date: date | None = None
 
@@ -74,6 +78,16 @@ class UpdateWorkItemRequest(BaseModel):
 class CreateWorkItemDependencyRequest(BaseModel):
     predecessor_work_item_id: int
     successor_work_item_id: int
+
+
+class WorkItemHierarchyEntryRequest(BaseModel):
+    work_item_id: int
+    parent_work_item_id: int | None = None
+    gantt_sort_order: int
+
+
+class UpdateWorkItemHierarchyRequest(BaseModel):
+    items: list[WorkItemHierarchyEntryRequest]
 
 class EvidenceCreateRequest(BaseModel):
     evidence_type: str
@@ -298,6 +312,80 @@ def _serialize_work_item_dependency(
     }
 
 
+def _serialize_activity(activity: models.Activity) -> dict[str, object]:
+    actor = activity.actor_user
+    target_user = activity.target_user
+    return {
+        "id": activity.id,
+        "title": activity.title,
+        "content": activity.content,
+        "activity_category": activity.activity_category,
+        "activity_type": activity.activity_type,
+        "contribution_phase": activity.contribution_phase,
+        "review_state": activity.review_state,
+        "credibility_level": activity.credibility_level,
+        "source_type": activity.source_type,
+        "version": activity.version,
+        "occurred_at": activity.occurred_at.isoformat(),
+        "created_at": activity.created_at.isoformat(),
+        "updated_at": activity.updated_at.isoformat(),
+        "is_modified": activity.updated_at > activity.occurred_at,
+        "actor": {
+            "id": actor.id,
+            "name": actor.name,
+            "profile_image_url": actor.profile_image_url,
+        }
+        if actor
+        else None,
+        "target_user": {
+            "id": target_user.id,
+            "name": target_user.name,
+            "profile_image_url": target_user.profile_image_url,
+        }
+        if target_user
+        else None,
+        "work_items": [
+            {
+                "id": work_item.id,
+                "title": work_item.title,
+                "description": work_item.description,
+                "status": work_item.status,
+                "assignee": {
+                    "id": work_item.assignee_user.id,
+                    "name": work_item.assignee_user.name,
+                    "profile_image_url": work_item.assignee_user.profile_image_url,
+                }
+                if work_item.assignee_user
+                else None,
+                "timeline_start_date": _get_work_item_timeline_dates(work_item)[0].isoformat(),
+                "timeline_end_date": _get_work_item_timeline_dates(work_item)[1].isoformat(),
+            }
+            for work_item in activity.work_items
+        ],
+        "evidences": [
+            {
+                "id": evidence.id,
+                "evidence_type": evidence.evidence_type,
+                "evidence_role": evidence.evidence_role,
+                "file_name": evidence.file_name,
+                "description": evidence.description,
+                "resource_url": evidence.resource_url,
+                "verification_status": evidence.verification_status,
+                "created_at": evidence.created_at.isoformat(),
+            }
+            for evidence in getattr(activity, "evidence_items", [])
+        ],
+        "reactions": [
+            {
+                "reactor_user_id": reaction.reactor_user_id,
+                "reaction_type": reaction.reaction_type,
+                "created_at": reaction.created_at.isoformat(),
+            }
+            for reaction in getattr(activity, "reactions", [])
+        ],
+    }
+
+
 def _serialize_project_work_item(work_item: models.WorkItem) -> dict[str, object]:
     creator = work_item.creator_user
     assignee = work_item.assignee_user
@@ -331,6 +419,8 @@ def _serialize_project_work_item(work_item: models.WorkItem) -> dict[str, object
         "timeline_start_date": timeline_start.isoformat(),
         "timeline_end_date": timeline_end.isoformat(),
         "duration_days": duration_days,
+        "parent_work_item_id": work_item.parent_work_item_id,
+        "gantt_sort_order": work_item.gantt_sort_order,
         "creator": {
             "id": creator.id,
             "name": creator.name,
@@ -357,7 +447,11 @@ def _build_project_work_item_snapshot(
             selectinload(models.WorkItem.activities).selectinload(models.Activity.actor_user)
         )
         .filter(models.WorkItem.project_id == project_id, models.WorkItem.deleted_at == None)
-        .order_by(models.WorkItem.created_at.asc(), models.WorkItem.id.asc())
+        .order_by(
+            models.WorkItem.gantt_sort_order.asc(),
+            models.WorkItem.created_at.asc(),
+            models.WorkItem.id.asc(),
+        )
         .all()
     )
     dependencies = (
@@ -435,6 +529,81 @@ def _ensure_assignable_member(
     if membership is None:
         raise HTTPException(status_code=400, detail="Assignee must be an active project member.")
     return assignee_user_id
+
+
+def _ensure_work_item_parent(
+    session: Session,
+    project_id: int,
+    work_item_id: int | None,
+    parent_work_item_id: int | None,
+) -> int | None:
+    if parent_work_item_id is None:
+        return None
+    if work_item_id is not None and work_item_id == parent_work_item_id:
+        raise HTTPException(status_code=400, detail="A work item cannot be its own parent.")
+
+    parent = (
+        session.query(models.WorkItem)
+        .filter(
+            models.WorkItem.project_id == project_id,
+            models.WorkItem.id == parent_work_item_id,
+            models.WorkItem.deleted_at == None,
+        )
+        .first()
+    )
+    if parent is None:
+        raise HTTPException(status_code=400, detail="Parent work item must belong to this project.")
+    return parent.id
+
+
+def _ensure_parent_does_not_cycle(
+    session: Session,
+    project_id: int,
+    work_item_id: int,
+    parent_work_item_id: int | None,
+) -> None:
+    current_parent_id = parent_work_item_id
+    seen: set[int] = set()
+    while current_parent_id is not None:
+        if current_parent_id == work_item_id:
+            raise HTTPException(status_code=400, detail="Hierarchy cannot contain cycles.")
+        if current_parent_id in seen:
+            raise HTTPException(status_code=400, detail="Hierarchy cannot contain cycles.")
+        seen.add(current_parent_id)
+        current_parent_id = (
+            session.query(models.WorkItem.parent_work_item_id)
+            .filter(
+                models.WorkItem.project_id == project_id,
+                models.WorkItem.id == current_parent_id,
+                models.WorkItem.deleted_at == None,
+            )
+            .scalar()
+        )
+
+
+def _validate_work_item_hierarchy(entries: list[WorkItemHierarchyEntryRequest]) -> None:
+    entry_by_id = {entry.work_item_id: entry for entry in entries}
+    if len(entry_by_id) != len(entries):
+        raise HTTPException(status_code=400, detail="Hierarchy contains duplicate work items.")
+
+    for entry in entries:
+        if entry.gantt_sort_order < 0:
+            raise HTTPException(status_code=400, detail="Hierarchy sort order cannot be negative.")
+        if entry.parent_work_item_id is None:
+            continue
+        if entry.parent_work_item_id == entry.work_item_id:
+            raise HTTPException(status_code=400, detail="A work item cannot be its own parent.")
+        if entry.parent_work_item_id not in entry_by_id:
+            raise HTTPException(status_code=400, detail="Parent work item must be included in hierarchy payload.")
+
+    for entry in entries:
+        seen: set[int] = set()
+        current = entry
+        while current.parent_work_item_id is not None:
+            if current.work_item_id in seen:
+                raise HTTPException(status_code=400, detail="Hierarchy cannot contain cycles.")
+            seen.add(current.work_item_id)
+            current = entry_by_id[current.parent_work_item_id]
 
 
 def _require_project_work_item(
@@ -680,12 +849,30 @@ def create_project_work_item(
         status_value = _validate_work_item_status(payload.status)
         priority_value = _validate_work_item_priority(payload.priority)
         assignee_user_id = _ensure_assignable_member(session, project_id, payload.assignee_user_id)
+        parent_work_item_id = _ensure_work_item_parent(
+            session,
+            project_id,
+            None,
+            payload.parent_work_item_id,
+        )
+        gantt_sort_order = payload.gantt_sort_order
+        if gantt_sort_order is None:
+            max_sort_order = (
+                session.query(func.max(models.WorkItem.gantt_sort_order))
+                .filter(models.WorkItem.project_id == project_id, models.WorkItem.deleted_at == None)
+                .scalar()
+            )
+            gantt_sort_order = int(max_sort_order or 0) + 1
+        if gantt_sort_order < 0:
+            raise HTTPException(status_code=400, detail="Hierarchy sort order cannot be negative.")
         now = datetime.now()
 
         work_item = models.WorkItem(
             project_id=project.id,
             creator_user_id=current_user.id,
             assignee_user_id=assignee_user_id,
+            parent_work_item_id=parent_work_item_id,
+            gantt_sort_order=gantt_sort_order,
             title=title,
             description=payload.description.strip(),
             status=status_value,
@@ -773,6 +960,21 @@ def update_project_work_item(
                 payload.assignee_user_id,
             )
 
+        if "parent_work_item_id" in changed_fields:
+            parent_work_item_id = _ensure_work_item_parent(
+                session,
+                project_id,
+                work_item.id,
+                payload.parent_work_item_id,
+            )
+            _ensure_parent_does_not_cycle(session, project_id, work_item.id, parent_work_item_id)
+            work_item.parent_work_item_id = parent_work_item_id
+
+        if "gantt_sort_order" in changed_fields and payload.gantt_sort_order is not None:
+            if payload.gantt_sort_order < 0:
+                raise HTTPException(status_code=400, detail="Hierarchy sort order cannot be negative.")
+            work_item.gantt_sort_order = payload.gantt_sort_order
+
         current_timeline_start, current_timeline_end = _get_work_item_timeline_dates(work_item)
         next_timeline_start = payload.timeline_start_date or current_timeline_start
         next_timeline_end = payload.timeline_end_date or current_timeline_end
@@ -848,6 +1050,21 @@ def delete_project_work_item(
         )
         session.add(activity)
 
+        (
+            session.query(models.WorkItem)
+            .filter(
+                models.WorkItem.project_id == project_id,
+                models.WorkItem.parent_work_item_id == work_item.id,
+                models.WorkItem.deleted_at == None,
+            )
+            .update(
+                {
+                    models.WorkItem.parent_work_item_id: None,
+                    models.WorkItem.updated_at: now,
+                },
+                synchronize_session=False,
+            )
+        )
         work_item.deleted_at = now
         session.commit()
 
@@ -855,6 +1072,56 @@ def delete_project_work_item(
         return {
             "message": "Work item deleted.",
             "work_item_id": work_item_id,
+        }
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+@router.put("/{project_id}/work-items/hierarchy", summary="Update project work item hierarchy")
+def update_project_work_item_hierarchy(
+    project_id: int,
+    payload: UpdateWorkItemHierarchyRequest,
+    request: FastAPIRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    session = get_session()
+    try:
+        current_user = get_authenticated_user(session, request, authorization)
+        _project, _membership = _require_project_access(session, project_id, current_user.id)
+        _validate_work_item_hierarchy(payload.items)
+
+        work_items = (
+            session.query(models.WorkItem)
+            .filter(models.WorkItem.project_id == project_id, models.WorkItem.deleted_at == None)
+            .all()
+        )
+        work_item_by_id = {work_item.id: work_item for work_item in work_items}
+        payload_ids = {entry.work_item_id for entry in payload.items}
+        active_ids = set(work_item_by_id)
+
+        if payload_ids != active_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="Hierarchy payload must include every active project work item exactly once.",
+            )
+
+        now = datetime.now()
+        for entry in payload.items:
+            work_item = work_item_by_id[entry.work_item_id]
+            work_item.parent_work_item_id = entry.parent_work_item_id
+            work_item.gantt_sort_order = entry.gantt_sort_order
+            work_item.updated_at = now
+
+        session.commit()
+
+        _broadcast_project_work_item_change(project_id, "hierarchy_updated")
+        return {
+            "message": "Work item hierarchy updated.",
+            "project_id": project_id,
+            "count": len(payload.items),
         }
     except Exception:
         session.rollback()
@@ -1080,15 +1347,13 @@ def get_project(
         done_count = sum(1 for work_item in work_items if work_item.status == "DONE")
         completion_rate = int((done_count / total_work_items) * 100) if total_work_items else 0
 
-        from sqlalchemy.orm import aliased
-        TargetUser = aliased(models.AppUser)
-        recent_activities_tuples = (
-            session.query(models.Activity, models.AppUser, TargetUser)
-            .join(models.AppUser, models.AppUser.id == models.Activity.actor_user_id)
-            .outerjoin(TargetUser, TargetUser.id == models.Activity.target_user_id)
+        recent_activities = (
+            session.query(models.Activity)
             .options(joinedload(models.Activity.work_items).joinedload(models.WorkItem.assignee_user))
             .options(joinedload(models.Activity.evidence_items))
             .options(joinedload(models.Activity.reactions))
+            .options(joinedload(models.Activity.actor_user))
+            .options(joinedload(models.Activity.target_user))
             .filter(
                 models.Activity.project_id == project_id,
                 models.Activity.source_type != "SYSTEM_IMPORTED"
@@ -1133,54 +1398,7 @@ def get_project(
                     "in_progress_work_items": in_progress_count,
                     "done_work_items": done_count,
                     "completion_rate": completion_rate,
-                    "recent_activities": [
-                        {
-                            "id": activity.id,
-                            "title": activity.title,
-                            "content": activity.content,
-                            "activity_type": activity.activity_type,
-                            "review_state": activity.review_state,
-                            "occurred_at": activity.occurred_at.isoformat(),
-                            "updated_at": activity.updated_at.isoformat(),
-                            "activity_category": activity.activity_category,
-                            "actor": {
-                                "id": actor.id,
-                                "name": actor.name,
-                            },
-                            "target_user": {
-                                "id": target_user.id,
-                                "name": target_user.name,
-                            } if target_user else None,
-                            "work_items": [
-                                {
-                                    "id": w.id,
-                                    "title": w.title,
-                                    "description": w.description,
-                                    "assignee": {
-                                        "name": w.assignee_user.name
-                                    } if w.assignee_user else None,
-                                    "timeline_start_date": _get_work_item_timeline_dates(w)[0].isoformat(),
-                                    "timeline_end_date": _get_work_item_timeline_dates(w)[1].isoformat(),
-                                } for w in activity.work_items
-                            ],
-                            "evidences": [
-                                {
-                                    "id": ev.id,
-                                    "evidence_type": ev.evidence_type,
-                                    "description": ev.description,
-                                    "resource_url": ev.resource_url,
-                                }
-                                for ev in getattr(activity, 'evidence_items', [])
-                            ],
-                            "reactions": [
-                                {
-                                    "reactor_user_id": r.reactor_user_id,
-                                    "reaction_type": r.reaction_type
-                                } for r in getattr(activity, 'reactions', [])
-                            ]
-                        }
-                        for activity, actor, target_user in recent_activities_tuples
-                    ],
+                    "recent_activities": [_serialize_activity(activity) for activity in recent_activities],
                 },
             },
         }
@@ -1351,14 +1569,62 @@ def update_project_member(
     project_id: int,
     member_id: int,
     payload: UpdateProjectMemberRequest,
+    request: FastAPIRequest,
+    authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
-    return {
-        "status": "not_implemented",
-        "message": "PATCH /api/projects/{project_id}/members/{member_id} will update member role and position.",
-        "project_id": project_id,
-        "member_id": member_id,
-        "payload": payload.model_dump(exclude_none=True),
-    }
+    session = get_session()
+    try:
+        current_user = get_authenticated_user(session, request, authorization)
+        _project, membership = _require_project_access(session, project_id, current_user.id)
+        target_member = (
+            session.query(models.ProjectMember)
+            .filter(
+                models.ProjectMember.project_id == project_id,
+                models.ProjectMember.id == member_id,
+                models.ProjectMember.left_at == None,
+            )
+            .first()
+        )
+        if target_member is None:
+            raise HTTPException(status_code=404, detail="Project member not found.")
+
+        is_self = target_member.user_id == current_user.id
+        is_leader = membership.project_role == "LEADER"
+        if not is_self and not is_leader:
+            raise HTTPException(status_code=403, detail="Only leaders can update other members.")
+
+        changed_fields = payload.model_fields_set
+        if "position_label" in changed_fields and payload.position_label is not None:
+            position_label = payload.position_label.strip()
+            if not position_label:
+                raise HTTPException(status_code=400, detail="Role is required.")
+            if len(position_label) > 100:
+                raise HTTPException(status_code=400, detail="Role must be 100 characters or fewer.")
+            target_member.position_label = position_label
+
+        if "memo" in changed_fields and is_leader:
+            target_member.memo = payload.memo
+
+        if "project_role" in changed_fields:
+            if not is_leader:
+                raise HTTPException(status_code=403, detail="Only leaders can update project permissions.")
+            project_role = payload.project_role.upper() if payload.project_role else target_member.project_role
+            if project_role not in ("LEADER", "MEMBER"):
+                raise HTTPException(status_code=400, detail="Unsupported project role.")
+            target_member.project_role = project_role
+
+        session.commit()
+        session.refresh(target_member)
+        return {
+            "status": "ok",
+            "message": "Project member updated.",
+            "member": _serialize_project_membership(target_member),
+        }
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 @router.delete("/{project_id}/members/{member_id}", summary="Leave or remove project member")
@@ -1491,6 +1757,197 @@ def review_project_join_request(
     finally:
         session.close()
 
+
+
+@router.get("/{project_id}/activities", summary="List project activities")
+def list_project_activities(
+    project_id: int,
+    request: FastAPIRequest,
+    authorization: str | None = Header(default=None),
+    actor_user_id: int | None = None,
+    target_user_id: int | None = None,
+    author_scope: str = "ALL",
+    category: str = "ALL",
+    review_state: str = "ALL",
+    contribution_phase: str = "ALL",
+    credibility_level: str = "ALL",
+    source_type: str = "MANUAL",
+    work_item_id: int | None = None,
+    work_item_ids: str | None = None,
+    work_item_assignee_user_id: int | None = None,
+    q: str | None = None,
+    tag: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    has_evidence: bool | None = None,
+    evidence_type: str = "ALL",
+    has_reactions: bool | None = None,
+    reaction_type: str = "ALL",
+    reacted_by_me: bool | None = None,
+    modified: bool | None = None,
+    filter_operator: str = "AND",
+    limit: int = 30,
+    offset: int = 0,
+) -> dict[str, object]:
+    session = get_session()
+    try:
+        current_user = get_authenticated_user(session, request, authorization)
+        _project, _membership = _require_project_access(session, project_id, current_user.id)
+
+        query = (
+            session.query(models.Activity)
+            .options(joinedload(models.Activity.work_items).joinedload(models.WorkItem.assignee_user))
+            .options(joinedload(models.Activity.evidence_items))
+            .options(joinedload(models.Activity.reactions))
+            .options(joinedload(models.Activity.actor_user))
+            .options(joinedload(models.Activity.target_user))
+            .filter(models.Activity.project_id == project_id)
+        )
+
+        if source_type != "ALL":
+            query = query.filter(models.Activity.source_type == source_type.upper())
+        conditions = []
+        if author_scope.upper() == "ME":
+            conditions.append(models.Activity.actor_user_id == current_user.id)
+        elif actor_user_id is not None:
+            conditions.append(models.Activity.actor_user_id == actor_user_id)
+        if target_user_id is not None:
+            conditions.append(models.Activity.target_user_id == target_user_id)
+        if category != "ALL":
+            conditions.append(models.Activity.activity_category == category.upper())
+        if review_state != "ALL":
+            conditions.append(models.Activity.review_state == review_state.upper())
+        if contribution_phase != "ALL":
+            conditions.append(models.Activity.contribution_phase == contribution_phase.upper())
+        if credibility_level != "ALL":
+            conditions.append(models.Activity.credibility_level == credibility_level.upper())
+
+        parsed_work_item_ids = []
+        if work_item_ids:
+            for raw_id in work_item_ids.split(","):
+                raw_id = raw_id.strip()
+                if not raw_id:
+                    continue
+                try:
+                    parsed_work_item_ids.append(int(raw_id))
+                except ValueError:
+                    continue
+        if work_item_id is not None:
+            conditions.append(models.Activity.work_items.any(models.WorkItem.id == work_item_id))
+        elif parsed_work_item_ids:
+            conditions.append(models.Activity.work_items.any(models.WorkItem.id.in_(parsed_work_item_ids)))
+        if work_item_assignee_user_id is not None:
+            conditions.append(
+                models.Activity.work_items.any(
+                    models.WorkItem.assignee_user_id == work_item_assignee_user_id
+                )
+            )
+
+        keyword = q.strip() if q else ""
+        if keyword:
+            pattern = f"%{keyword}%"
+            conditions.append(
+                or_(
+                    models.Activity.title.ilike(pattern),
+                    models.Activity.content.ilike(pattern),
+                    models.Activity.activity_type.ilike(pattern),
+                )
+            )
+
+        tag_value = tag.strip() if tag else ""
+        if tag_value:
+            conditions.append(models.Activity.activity_type.ilike(f"%{tag_value}%"))
+
+        date_conditions = []
+        if date_from is not None:
+            date_conditions.append(models.Activity.occurred_at >= datetime.combine(date_from, time.min))
+        if date_to is not None:
+            date_conditions.append(models.Activity.occurred_at <= datetime.combine(date_to, time.max))
+        if date_conditions:
+            conditions.append(and_(*date_conditions))
+
+        if has_evidence is True:
+            conditions.append(models.Activity.evidence_items.any())
+        elif has_evidence is False:
+            conditions.append(~models.Activity.evidence_items.any())
+        if evidence_type != "ALL":
+            conditions.append(
+                models.Activity.evidence_items.any(
+                    models.Evidence.evidence_type == evidence_type.upper()
+                )
+            )
+
+        if has_reactions is True:
+            conditions.append(models.Activity.reactions.any())
+        elif has_reactions is False:
+            conditions.append(~models.Activity.reactions.any())
+        if reaction_type != "ALL":
+            conditions.append(
+                models.Activity.reactions.any(
+                    models.ActivityReaction.reaction_type == reaction_type.upper()
+                )
+            )
+        if reacted_by_me is True:
+            conditions.append(
+                models.Activity.reactions.any(
+                    models.ActivityReaction.reactor_user_id == current_user.id
+                )
+            )
+        elif reacted_by_me is False:
+            conditions.append(
+                ~models.Activity.reactions.any(
+                    models.ActivityReaction.reactor_user_id == current_user.id
+                )
+            )
+
+        if modified is True:
+            conditions.append(models.Activity.updated_at > models.Activity.occurred_at)
+        elif modified is False:
+            conditions.append(models.Activity.updated_at <= models.Activity.occurred_at)
+
+        if conditions:
+            if filter_operator.upper() == "OR":
+                query = query.filter(or_(*conditions))
+            else:
+                query = query.filter(*conditions)
+
+        normalized_limit = min(max(limit, 1), 100)
+        normalized_offset = max(offset, 0)
+        total = query.count()
+        activities = (
+            query.order_by(models.Activity.occurred_at.desc(), models.Activity.id.desc())
+            .offset(normalized_offset)
+            .limit(normalized_limit)
+            .all()
+        )
+
+        raw_activity_types = (
+            session.query(models.Activity.activity_type)
+            .filter(models.Activity.project_id == project_id, models.Activity.source_type != "SYSTEM_IMPORTED")
+            .all()
+        )
+        tags = sorted(
+            {
+                tag_part.strip()
+                for (activity_type,) in raw_activity_types
+                for tag_part in (activity_type or "").split(",")
+                if tag_part.strip()
+            },
+            key=lambda value: value.casefold(),
+        )
+
+        return {
+            "project_id": project_id,
+            "total": total,
+            "count": len(activities),
+            "limit": normalized_limit,
+            "offset": normalized_offset,
+            "has_more": normalized_offset + len(activities) < total,
+            "items": [_serialize_activity(activity) for activity in activities],
+            "available_tags": tags,
+        }
+    finally:
+        session.close()
 
 
 @router.post(

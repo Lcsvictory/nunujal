@@ -28,8 +28,9 @@
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
   margin-bottom: 32px;
   display: flex;
-  gap: 32px;
-  align-items: center;
+  flex-direction: column;
+  gap: 14px;
+  align-items: stretch;
 }
 
 .filter-group {
@@ -38,10 +39,159 @@
   gap: 12px;
 }
 
+.filter-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-row-bottom {
+  align-items: center;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 140px;
+}
+
+.filter-field-wide {
+  min-width: 240px;
+  flex: 1 1 260px;
+}
+
 .filter-label {
   font-weight: 600;
   color: #495057;
   font-size: 14px;
+}
+
+.filter-input {
+  min-height: 34px;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  background: #fff;
+  color: #343a40;
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #4dabf7;
+  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.16);
+}
+
+.task-combobox {
+  position: relative;
+}
+
+.task-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.task-filter-chip {
+  border: 1px solid #91caff;
+  background: #e7f5ff;
+  color: #1864ab;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.task-filter-chip span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-filter-chip:hover {
+  background: #d0ebff;
+  border-color: #4dabf7;
+}
+
+.task-filter-chip-x {
+  color: #1971c2;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.task-combobox .filter-input {
+  width: 100%;
+}
+
+.task-combobox-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14);
+  padding: 6px;
+}
+
+.task-combobox-hint {
+  color: #1971c2;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.task-combobox-option {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #343a40;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.task-combobox-option:hover,
+.task-combobox-option.selected {
+  background: #e7f5ff;
+  color: #1971c2;
+}
+
+.task-combobox-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-combobox-meta {
+  flex: 0 0 auto;
+  color: #868e96;
+  font-size: 12px;
+}
+
+.task-combobox-empty {
+  color: #868e96;
+  font-size: 13px;
+  padding: 10px;
 }
 
 .filter-btn {
@@ -63,6 +213,18 @@
   background-color: #4dabf7;
   color: white;
   border-color: #4dabf7;
+}
+
+.reset-filter-btn {
+  border-radius: 6px;
+  min-height: 34px;
+}
+
+.activity-count {
+  color: #6c757d;
+  font-size: 13px;
+  font-weight: 600;
+  margin-left: auto;
 }
 
 /* 활동 카드 스타일링 */
@@ -146,3 +308,25 @@
 .status-approved { color: #2b8a3e; font-weight: 500; }
 .status-pending { color: #e67700; font-weight: 500; }
 .empty-state { text-align: center; color: #ced4da; padding: 40px; font-size: 16px; }
+.error-state { color: #dc2626; background: #fff5f5; border: 1px solid #ffc9c9; border-radius: 8px; }
+
+.load-more-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.load-more-btn {
+  border: 1px solid #dee2e6;
+  background: #fff;
+  color: #495057;
+  border-radius: 6px;
+  padding: 9px 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.load-more-btn:disabled {
+  color: #adb5bd;
+  cursor: default;
+}

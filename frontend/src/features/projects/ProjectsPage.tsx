@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { ApiError, logout } from "../../lib/api";
+import { navigate } from "../../lib/router";
 import type { AuthUser } from "../auth/types";
 import { fetchProjects, deleteProject } from "./api";
 import { ProjectCreateOverlay } from "./ProjectCreateOverlay";
@@ -181,6 +182,13 @@ export function ProjectsPage({
             <button
               type="button"
               className="button button-secondary"
+              onClick={() => navigate("/my-page")}
+            >
+              마이페이지
+            </button>
+            <button
+              type="button"
+              className="button button-secondary"
               onClick={handleLogout}
               style={{ whiteSpace: "nowrap", gap: "8px", display: "inline-flex", alignItems: "center" }}
             >
@@ -344,11 +352,17 @@ export function ProjectsPage({
               <p className="side-panel-label">현재 사용자</p>
               <strong>{currentUser?.name ?? "로그인 정보 없음"}</strong>
               <span>{currentUser?.email ?? "프로젝트 화면 접근 시 확인됩니다."}</span>
+              {currentUser?.department ? <span>{currentUser.department}</span> : null}
               <span>
                 {currentUser
                   ? `${currentUser.provider} · ${currentUser.status}`
                   : "로그인 이후 사용자 요약이 표시됩니다."}
               </span>
+              {currentUser ? (
+                <button type="button" className="button button-secondary" onClick={() => navigate("/my-page")}>
+                  내 정보 관리
+                </button>
+              ) : null}
             </section>
 
             <section className="surface-panel side-panel">

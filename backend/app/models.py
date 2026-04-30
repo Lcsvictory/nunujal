@@ -240,6 +240,10 @@ class WorkItem(Base):
         CheckConstraint("status IN ('TODO', 'IN_PROGRESS', 'DONE')", name="chk_work_item_status"),
         CheckConstraint("priority IN ('LOW', 'MEDIUM', 'HIGH')", name="chk_work_item_priority"),
         CheckConstraint(
+            "parent_work_item_id IS NULL OR parent_work_item_id <> id",
+            name="chk_work_item_parent_not_self",
+        ),
+        CheckConstraint(
             "completed_at IS NULL OR started_at IS NULL OR completed_at >= started_at",
             name="chk_work_item_time_order",
         ),
@@ -249,6 +253,11 @@ class WorkItem(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("project.id", ondelete="CASCADE"), nullable=False)
     creator_user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=False)
     assignee_user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=True)
+    parent_work_item_id: Mapped[int] = mapped_column(
+        ForeignKey("work_item.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    gantt_sort_order: Mapped[int] = mapped_column(INTEGER, nullable=False, default=0, server_default=text("0"))
     title: Mapped[str] = mapped_column(VARCHAR(200), nullable=False)
     description: Mapped[str] = mapped_column(TEXT, nullable=False, default="", server_default=text("''"))
     status: Mapped[str] = mapped_column(VARCHAR(20), nullable=False, default="TODO", server_default=text("'TODO'"))
@@ -268,6 +277,15 @@ class WorkItem(Base):
     assignee_user: Mapped["AppUser"] = relationship(
         back_populates="assigned_work_items",
         foreign_keys=[assignee_user_id],
+    )
+    parent_work_item: Mapped["WorkItem"] = relationship(
+        back_populates="child_work_items",
+        remote_side=[id],
+        foreign_keys=[parent_work_item_id],
+    )
+    child_work_items: Mapped[list["WorkItem"]] = relationship(
+        back_populates="parent_work_item",
+        foreign_keys=[parent_work_item_id],
     )
     outgoing_dependencies: Mapped[list["WorkItemDependency"]] = relationship(
         back_populates="predecessor_work_item",

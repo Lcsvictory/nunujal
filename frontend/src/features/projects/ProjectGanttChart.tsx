@@ -10,6 +10,7 @@ import {
   fetchProjectWorkItems,
   getProjectWorkItemsWebSocketUrl,
   updateProjectWorkItem,
+  updateProjectWorkItemHierarchy,
 } from "./api";
 import { ProjectTaskCreateOverlay } from "./ProjectTaskCreateOverlay";
 import { ProjectTaskEditOverlay } from "./ProjectTaskEditOverlay";
@@ -34,6 +35,8 @@ type WorkItemStatus = "done" | "in_progress" | "planned";
 type ChartWorkItem = {
   id: string;
   numericId: number;
+  parentId: string;
+  sortOrder: number;
   code: string;
   title: string;
   description: string;
@@ -91,6 +94,12 @@ const ZOOM_LEVELS = [
   { name: "좁게", min_column_width: 34 },
   { name: "기본", min_column_width: 48 },
   { name: "넓게", min_column_width: 64 },
+] as const;
+
+const VERTICAL_ZOOM_LEVELS = [
+  { name: "압축", rowHeight: 44, barHeight: 22 },
+  { name: "기본", rowHeight: 56, barHeight: 28 },
+  { name: "여유", rowHeight: 70, barHeight: 34 },
 ] as const;
 
 function parseLocalDate(value: string): Date {
@@ -168,6 +177,29 @@ function centerTimelineOnDate(ganttInstance: GanttStatic, date: Date) {
   ganttInstance.scrollTo(Math.max(targetX, 0), y);
 }
 
+function repaintGanttTimeline(ganttInstance: GanttStatic) {
+  const { x, y } = ganttInstance.getScrollState();
+
+  window.requestAnimationFrame(() => {
+    ganttInstance.setSizes();
+    ganttInstance.render();
+    ganttInstance.scrollTo(x, y);
+
+    window.requestAnimationFrame(() => {
+      ganttInstance.setSizes();
+      ganttInstance.render();
+      ganttInstance.scrollTo(x, y);
+    });
+  });
+}
+
+function applyVerticalZoom(ganttInstance: GanttStatic, zoomIndex: number) {
+  const zoomLevel = VERTICAL_ZOOM_LEVELS[zoomIndex] ?? VERTICAL_ZOOM_LEVELS[1];
+  ganttInstance.config.row_height = zoomLevel.rowHeight;
+  ganttInstance.config.bar_height = zoomLevel.barHeight;
+  repaintGanttTimeline(ganttInstance);
+}
+
 function isDateVisible(ganttInstance: GanttStatic, date: Date): boolean {
   const timelineArea = ganttInstance.$task as HTMLElement | undefined;
   if (!timelineArea) {
@@ -211,6 +243,8 @@ function toChartWorkItem(item: ProjectWorkItemSummary): ChartWorkItem {
   return {
     id: String(item.id),
     numericId: item.id,
+    parentId: item.parent_work_item_id ? String(item.parent_work_item_id) : "0",
+    sortOrder: item.gantt_sort_order,
     code: `${String(item.id).padStart(3, "0")}`,
     title: item.title,
     description: item.description.trim() || "설명이 아직 없습니다.",
@@ -244,7 +278,7 @@ function toDhtmlxTask(item: ChartWorkItem): DhtmlxTask {
 
   return {
     id: item.id,
-    parent: 0,
+    parent: item.parentId === "0" ? 0 : item.parentId,
     text: item.title,
     description: item.description,
     start_date: parseLocalDate(item.startDate),
@@ -276,6 +310,32 @@ function toDhtmlxLink(dependency: ChartWorkItemDependency): Link {
     target: dependency.successorWorkItemId,
     type: "0",
   };
+}
+
+function buildHierarchyPayloadFromGantt(ganttInstance: GanttStatic) {
+  const payload: {
+    work_item_id: number;
+    parent_work_item_id: number | null;
+    gantt_sort_order: number;
+  }[] = [];
+  let sortOrder = 0;
+
+  const visitChildren = (parentId: string | number, apiParentId: number | null) => {
+    const children = ganttInstance.getChildren(parentId);
+    for (const childId of children) {
+      const numericId = Number(childId);
+      payload.push({
+        work_item_id: numericId,
+        parent_work_item_id: apiParentId,
+        gantt_sort_order: sortOrder,
+      });
+      sortOrder += 1;
+      visitChildren(childId, numericId);
+    }
+  };
+
+  visitChildren(0, null);
+  return payload;
 }
 
 function toApiStatus(status: WorkItemStatus): ProjectWorkItemSummary["status"] {
@@ -334,6 +394,8 @@ export function ProjectGanttChart({
   const workItemMapRef = useRef<Map<string, ChartWorkItem>>(new Map());
   const dependenciesRef = useRef<ChartWorkItemDependency[]>([]);
   const projectMembersRef = useRef(projectMembers);
+  const verticalZoomIndexRef = useRef(1);
+  const suppressZoomCenterRef = useRef(false);
   const isApplyingSnapshotRef = useRef(false);
   const shouldCenterTodayRef = useRef(true);
   const hasBootstrappedRef = useRef(false);
@@ -351,6 +413,7 @@ export function ProjectGanttChart({
     () => document.visibilityState === "visible",
   );
   const [currentZoomLevel, setCurrentZoomLevel] = useState<string>(ZOOM_LEVELS[1].name);
+  const [verticalZoomIndex, setVerticalZoomIndex] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [socketStatus, setSocketStatus] = useState<"idle" | "connecting" | "live" | "offline">(
     "idle",
@@ -393,6 +456,7 @@ export function ProjectGanttChart({
   workItemMapRef.current = new Map(workItems.map((item) => [item.id, item]));
   dependenciesRef.current = dependencies;
   projectMembersRef.current = projectMembers;
+  verticalZoomIndexRef.current = verticalZoomIndex;
 
   useEffect(() => {
     shouldCenterTodayRef.current = true;
@@ -431,7 +495,16 @@ export function ProjectGanttChart({
         return;
       }
 
-      setWorkItems(response.items.map(toChartWorkItem));
+      const itemIds = new Set(response.items.map((item) => String(item.id)));
+      const nextItems = response.items.map((item) => {
+        const nextItem = toChartWorkItem(item);
+        if (nextItem.parentId !== "0" && !itemIds.has(nextItem.parentId)) {
+          return { ...nextItem, parentId: "0" };
+        }
+        return nextItem;
+      });
+
+      setWorkItems(nextItems);
       setDependencies(response.dependencies.map(toChartWorkItemDependency));
       setLastSyncedAt(new Date().toISOString());
       setErrorMessage(null);
@@ -671,6 +744,8 @@ export function ProjectGanttChart({
     ganttInstance.config.drag_resize = true;
     ganttInstance.config.drag_progress = false;
     ganttInstance.config.drag_links = true;
+    ganttInstance.config.order_branch = true;
+    ganttInstance.config.order_branch_free = true;
     ganttInstance.config.details_on_dblclick = false;
     ganttInstance.config.show_quick_info = true;
     ganttInstance.config.initial_scroll = false;
@@ -679,8 +754,8 @@ export function ProjectGanttChart({
     ganttInstance.config.grid_resize = true;
     ganttInstance.config.autofit = false;
     ganttInstance.config.keep_grid_width = false;
-    ganttInstance.config.row_height = 56;
-    ganttInstance.config.bar_height = 28;
+    ganttInstance.config.row_height = VERTICAL_ZOOM_LEVELS[verticalZoomIndex].rowHeight;
+    ganttInstance.config.bar_height = VERTICAL_ZOOM_LEVELS[verticalZoomIndex].barHeight;
     ganttInstance.config.show_links = true;
     ganttInstance.config.smart_scales = true;
     ganttConfig.quickinfo_buttons = ["edit", "delete"];
@@ -880,6 +955,8 @@ export function ProjectGanttChart({
             timeline_start_date: item.startDate,
             timeline_end_date: item.endDate,
             duration_days: item.durationDays,
+            parent_work_item_id: item.parentId === "0" ? null : Number(item.parentId),
+            gantt_sort_order: item.sortOrder,
             creator: { id: -1, name: item.creatorName },
             assignee: item.assigneeUserId ? { id: item.assigneeUserId, name: item.owner } : null,
           } as ProjectWorkItemSummary);
@@ -898,7 +975,30 @@ export function ProjectGanttChart({
 
     const taskData = ganttInstance.$task_data as HTMLElement | undefined;
     const handleTimelineWheel = (event: WheelEvent) => {
-      if (!event.shiftKey) {
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        suppressZoomCenterRef.current = true;
+        if (event.deltaY < 0) {
+          ganttInstance.ext.zoom.zoomIn();
+        } else if (event.deltaY > 0) {
+          ganttInstance.ext.zoom.zoomOut();
+        }
+        repaintGanttTimeline(ganttInstance);
+        return;
+      }
+
+      if (event.altKey) {
+        event.preventDefault();
+        const nextZoomIndex = clamp(
+          verticalZoomIndexRef.current + (event.deltaY < 0 ? 1 : -1),
+          0,
+          VERTICAL_ZOOM_LEVELS.length - 1,
+        );
+        if (nextZoomIndex !== verticalZoomIndexRef.current) {
+          verticalZoomIndexRef.current = nextZoomIndex;
+          setVerticalZoomIndex(nextZoomIndex);
+          applyVerticalZoom(ganttInstance, nextZoomIndex);
+        }
         return;
       }
 
@@ -912,6 +1012,11 @@ export function ProjectGanttChart({
 
     const zoomEventId = ganttInstance.ext.zoom.attachEvent("onAfterZoom", (_level, config) => {
       setCurrentZoomLevel(config.name);
+      if (suppressZoomCenterRef.current) {
+        suppressZoomCenterRef.current = false;
+        repaintGanttTimeline(ganttInstance);
+        return true;
+      }
       shouldCenterTodayRef.current = true;
       window.requestAnimationFrame(() => {
         if (ganttRef.current) {
@@ -929,6 +1034,14 @@ export function ProjectGanttChart({
       setSelectedWorkItemId(null);
       ganttInstance.hideQuickInfo();
       ganttInstance.unselectTask();
+    });
+    const taskOpenedEventId = ganttInstance.attachEvent("onTaskOpened", () => {
+      repaintGanttTimeline(ganttInstance);
+      return true;
+    });
+    const taskClosedEventId = ganttInstance.attachEvent("onTaskClosed", () => {
+      repaintGanttTimeline(ganttInstance);
+      return true;
     });
     const beforeLinkAddEventId = ganttInstance.attachEvent("onBeforeLinkAdd", (_id, link) => {
       if (isApplyingSnapshotRef.current) {
@@ -1036,6 +1149,8 @@ export function ProjectGanttChart({
       );
 
       if (item.startDate === newStart && item.endDate === newEnd) {
+        // 일정이 바뀌지 않아도 dhtmlxgantt UI에서 다시 원위치 렌더링되도록 처리
+        ganttInstance.render();
         return;
       }
 
@@ -1051,6 +1166,7 @@ export function ProjectGanttChart({
       })
         .then(() => {
           setErrorMessage(null);
+          void refreshSnapshot({ background: true });
         })
         .catch((error: unknown) => {
           const msg = error instanceof ApiError ? error.message : "워크아이템 일정을 변경하지 못했습니다.";
@@ -1060,7 +1176,51 @@ export function ProjectGanttChart({
         })
         .finally(() => {
           setIsSyncing(false);
+          ganttInstance.render(); // force render explicitly
         });
+    });
+
+    const afterTaskMoveEventId = ganttInstance.attachEvent("onAfterTaskMove", (id, parent, _tindex) => {
+      const taskId = String(id);
+      const rawParentId = parent == null ? "0" : String(parent);
+      const nextParentId = rawParentId === taskId ? "0" : rawParentId;
+      const hierarchyItems = buildHierarchyPayloadFromGantt(ganttInstance);
+      const hierarchyById = new Map(hierarchyItems.map((item) => [String(item.work_item_id), item]));
+
+      setWorkItems((current) => {
+        const validTaskIds = new Set(current.map((item) => item.id));
+        const parentId = nextParentId !== "0" && validTaskIds.has(nextParentId) ? nextParentId : "0";
+        const nextItems = current.map((item) => {
+          const hierarchyItem = hierarchyById.get(item.id);
+          if (!hierarchyItem) {
+            return item.id === taskId ? { ...item, parentId } : item;
+          }
+          return {
+            ...item,
+            parentId: hierarchyItem.parent_work_item_id ? String(hierarchyItem.parent_work_item_id) : "0",
+            sortOrder: hierarchyItem.gantt_sort_order,
+          };
+        });
+        return nextItems;
+      });
+
+      setIsSyncing(true);
+      setErrorMessage(null);
+      void updateProjectWorkItemHierarchy(projectIdRef.current, { items: hierarchyItems })
+        .then(() => {
+          setLastSyncedAt(new Date().toISOString());
+          setErrorMessage(null);
+        })
+        .catch((error: unknown) => {
+          setErrorMessage(
+            error instanceof ApiError ? error.message : "워크아이템 계층 구조를 저장하지 못했습니다.",
+          );
+          void refreshSnapshot({ background: true });
+        })
+        .finally(() => {
+          setIsSyncing(false);
+        });
+      return true;
     });
 
     return () => {
@@ -1068,10 +1228,13 @@ export function ProjectGanttChart({
       ganttInstance.ext.zoom.detachEvent(zoomEventId);
       ganttInstance.detachEvent(taskClickEventId);
       ganttInstance.detachEvent(emptyClickEventId);
+      ganttInstance.detachEvent(taskOpenedEventId);
+      ganttInstance.detachEvent(taskClosedEventId);
       ganttInstance.detachEvent(beforeLinkAddEventId);
       ganttInstance.detachEvent(afterLinkAddEventId);
       ganttInstance.detachEvent(afterLinkDeleteEventId);
       ganttInstance.detachEvent(afterTaskDragEventId);
+      ganttInstance.detachEvent(afterTaskMoveEventId);
       ganttInstance.detachEvent(lightboxSaveEventId);
       ganttInstance.detachEvent(lightboxDeleteEventId);
       if (markerIdRef.current !== null) {
@@ -1090,7 +1253,17 @@ export function ProjectGanttChart({
     }
 
     const scrollState = ganttInstance.getScrollState();
-    const nextTasks = workItems.map(toDhtmlxTask);
+    const nextTasks = [...workItems]
+      .sort((first, second) => first.sortOrder - second.sortOrder || first.numericId - second.numericId)
+      .map(toDhtmlxTask);
+    const siblingIndexByTaskId = new Map<string, number>();
+    const siblingCounts = new Map<string, number>();
+    for (const task of nextTasks) {
+      const parentKey = String(task.parent || 0);
+      const siblingIndex = siblingCounts.get(parentKey) ?? 0;
+      siblingIndexByTaskId.set(String(task.id), siblingIndex);
+      siblingCounts.set(parentKey, siblingIndex + 1);
+    }
     const nextLinks = dependencies.map(toDhtmlxLink);
     const nextTaskIds = new Set(nextTasks.map((task) => String(task.id)));
     const nextLinkIds = new Set(nextLinks.map((link) => String(link.id)));
@@ -1106,11 +1279,20 @@ export function ProjectGanttChart({
       ganttInstance.config.start_date = chartRange.start;
       ganttInstance.config.end_date = chartRange.end;
       for (const task of nextTasks) {
+        const parentId = task.parent && task.parent !== 0 && ganttInstance.isTaskExists(task.parent)
+          ? task.parent
+          : 0;
+        const desiredIndex = siblingIndexByTaskId.get(String(task.id)) ?? 0;
         if (ganttInstance.isTaskExists(task.id)) {
+          const currentParentId = String((ganttInstance as any).getParent?.(task.id) ?? 0);
+          const currentIndex = (ganttInstance as any).getTaskIndex?.(task.id);
           Object.assign(ganttInstance.getTask(task.id), task);
+          if (currentParentId !== String(parentId) || currentIndex !== desiredIndex) {
+            (ganttInstance as any).moveTask?.(task.id, desiredIndex, parentId);
+          }
           ganttInstance.updateTask(task.id);
         } else {
-          ganttInstance.addTask(task, 0);
+          ganttInstance.addTask(task, parentId, desiredIndex);
         }
       }
       for (const existingTaskId of existingTaskIds) {
@@ -1150,6 +1332,7 @@ export function ProjectGanttChart({
         return;
       }
       ganttRef.current.setSizes();
+      ganttRef.current.render();
       if (shouldCenterTodayRef.current) {
         centerTimelineOnDate(ganttRef.current, today);
         shouldCenterTodayRef.current = false;
@@ -1189,12 +1372,12 @@ export function ProjectGanttChart({
     });
   }, [isVisible, today]);
 
-  // 오늘을 가리키는 빨간 마커를 주기에 맞춰 계속 갱신하여 1칸(24H) 내부에서도 이동하게 설정
   useEffect(() => {
     if (!isVisible) {
       return;
     }
-    const interval = setInterval(() => {
+
+    const interval = window.setInterval(() => {
       const ganttInstance = ganttRef.current;
       const markerId = markerIdRef.current;
       if (ganttInstance && markerId !== null) {
@@ -1202,13 +1385,18 @@ export function ProjectGanttChart({
         if (marker) {
           const now = new Date();
           marker.start_date = now;
-          marker.title = formatDateLabel(toLocalIsoDate(now)) + ` ${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+          marker.title =
+            formatDateLabel(toLocalIsoDate(now)) +
+            ` ${now.getHours().toString().padStart(2, "0")}:${now
+              .getMinutes()
+              .toString()
+              .padStart(2, "0")}`;
           ganttInstance.updateMarker(markerId);
         }
       }
-    }, 60000); // 1분 마다 갱신
+    }, 60000);
 
-    return () => clearInterval(interval);
+    return () => window.clearInterval(interval);
   }, [isVisible]);
 
   const handleZoomIn = () => {

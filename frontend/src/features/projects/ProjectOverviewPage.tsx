@@ -3,6 +3,7 @@ import { ProjectTasksPage } from "./ProjectTasksPage";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, logout, apiJsonRequest, getApiWebSocketBaseUrl } from "../../lib/api";
 import { navigate } from "../../lib/router";
+import { MyPage } from "../auth/MyPage";
 import type { AuthUser } from "../auth/types";
 import { fetchProjectDetail, deleteProject } from "./api";
 import { ProjectGanttChart } from "./ProjectGanttChart";
@@ -383,6 +384,20 @@ export function ProjectOverviewPage({
 
     if (activeSection === "activities") {
       return project ? <ProjectActivitiesPage project={project} onRefresh={loadProject} /> : null;
+    }
+
+    if (activeSection === "profile" && project) {
+      return (
+        <MyPage
+          embedded
+          initialUser={currentUser}
+          projectId={project.id}
+          membership={project.my_membership}
+          onMembershipUpdated={(membership) =>
+            setProject((current) => current ? { ...current, my_membership: membership } : current)
+          }
+        />
+      );
     }
 
     return (

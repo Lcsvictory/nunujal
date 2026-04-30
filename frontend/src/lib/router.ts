@@ -1,4 +1,4 @@
-export type AppScreen = "landing" | "login" | "projects" | "project-overview";
+export type AppScreen = "landing" | "login" | "projects" | "project-overview" | "my-page";
 
 export type ParsedRoute = {
   screen: AppScreen;
@@ -25,6 +25,14 @@ export function parseLocation(location: Location): ParsedRoute {
     };
   }
 
+  if (location.pathname === "/my-page") {
+    return {
+      screen: "my-page",
+      params: new URLSearchParams(location.search),
+      projectId: null,
+    };
+  }
+
   if (projectDetailMatch) {
     return {
       screen: "project-overview",
@@ -41,7 +49,7 @@ export function parseLocation(location: Location): ParsedRoute {
 }
 
 export function isKnownPath(pathname: string): boolean {
-  return pathname === "/" || pathname === "/login" || pathname === "/projects" || /^\/projects\/\d+$/.test(pathname);
+  return pathname === "/" || pathname === "/login" || pathname === "/projects" || pathname === "/my-page" || /^\/projects\/\d+$/.test(pathname);
 }
 
 export function navigate(path: string): void {

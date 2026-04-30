@@ -8,9 +8,13 @@ import type {
   JoinProjectPayload,
   JoinProjectResponse,
   ProjectDetailResponse,
+  ProjectActivityListFilters,
+  ProjectActivityListResponse,
   ProjectListResponse,
+  ProjectMembership,
   ProjectWorkItemListResponse,
   ProjectMemberSummary,
+  UpdateProjectWorkItemHierarchyPayload,
   UpdateProjectPayload,
   UpdateProjectWorkItemPayload,
   WorkItemDependencyMutationResponse,
@@ -31,8 +35,29 @@ export function deleteProject(projectId: number): Promise<{ status: string; mess
   });
 }
 
+function toQueryString(filters: object = {}): string {
+  const params = new URLSearchParams();
+  Object.entries(filters as Record<string, unknown>).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "" || value === "ALL") {
+      return;
+    }
+    params.set(key, String(value));
+  });
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 export function fetchProjectWorkItems(projectId: number): Promise<ProjectWorkItemListResponse> {
   return apiRequest<ProjectWorkItemListResponse>(`/api/projects/${projectId}/work-items`);
+}
+
+export function fetchProjectActivities(
+  projectId: number,
+  filters: ProjectActivityListFilters = {},
+): Promise<ProjectActivityListResponse> {
+  return apiRequest<ProjectActivityListResponse>(
+    `/api/projects/${projectId}/activities${toQueryString(filters)}`,
+  );
 }
 
 export function createProjectWorkItem(
@@ -54,6 +79,17 @@ export function updateProjectWorkItem(
   return apiJsonRequest<WorkItemMutationResponse>(
     `/api/projects/${projectId}/work-items/${workItemId}`,
     "PATCH",
+    payload,
+  );
+}
+
+export function updateProjectWorkItemHierarchy(
+  projectId: number,
+  payload: UpdateProjectWorkItemHierarchyPayload,
+): Promise<{ message: string; project_id: number; count: number }> {
+  return apiJsonRequest<{ message: string; project_id: number; count: number }>(
+    `/api/projects/${projectId}/work-items/hierarchy`,
+    "PUT",
     payload,
   );
 }
@@ -120,6 +156,18 @@ export function createProjectJoinRequest(
 
 export function fetchProjectMembers(projectId: number): Promise<{ items: ProjectMemberSummary[] }> {
   return apiRequest<{ items: ProjectMemberSummary[] }>(`/api/projects/${projectId}/members`);
+}
+
+export function updateProjectMember(
+  projectId: number,
+  memberId: number,
+  payload: { position_label?: string },
+): Promise<{ status: string; message: string; member: ProjectMembership }> {
+  return apiJsonRequest<{ status: string; message: string; member: ProjectMembership }>(
+    `/api/projects/${projectId}/members/${memberId}`,
+    "PATCH",
+    payload,
+  );
 }
 
 type ProjectJoinRequestItem = {

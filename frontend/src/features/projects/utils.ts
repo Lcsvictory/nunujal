@@ -20,7 +20,7 @@ const reviewStateLabelMap: Record<string, string> = {
   NORMAL: "정상",
   UNDER_REVIEW: "검토 중",
   DISPUTED: "이의 제기",
-  RESOLVED: "해결됨",
+  RESOLVED: "승인됨",
 };
 
 function formatDateValue(value: string, options: Intl.DateTimeFormatOptions): string {
