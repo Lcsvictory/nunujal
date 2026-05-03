@@ -11,6 +11,16 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "https://nunujal.o-r.kr/api/auth/google/callback"
     jwt_secret: str
     jwt_expire_minutes: int = 1440
+    contribution_ai_provider: str = "google_gemma"
+    ollama_base_url: str = "http://nunujal.o-r.kr:12812"
+    gemini_api_key: str | None = None
+    contribution_model_name: str = "gemini-2.5-flash"
+    google_genai_thinking_level: str = "HIGH"
+    google_genai_thinking_budget: int | None = -1
+    google_genai_use_response_schema: bool = True
+    contribution_prompt_version: str = "v1"
+    contribution_policy_version: str = "v1"
+    contribution_request_timeout_seconds: int = 600
 
     model_config = SettingsConfigDict(
         env_file=".env", 

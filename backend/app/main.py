@@ -8,6 +8,7 @@ import app.models as models
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.database import get_engine
+from app.services.contribution.queue import contribution_assessment_queue
 
 settings = get_settings()
 
@@ -15,6 +16,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     models.Base.metadata.create_all(bind=get_engine())
+    contribution_assessment_queue.enqueue_pending()
     yield
 
 
@@ -35,4 +37,4 @@ app.include_router(api_router, prefix="/api")
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=settings.server_port, reload=True)
+    uvicorn.run("app.main:app", host="127.0.0.1", port=settings.server_port, reload=True)
