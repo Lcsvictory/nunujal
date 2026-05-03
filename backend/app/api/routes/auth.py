@@ -267,16 +267,77 @@ def login_as_dummy_member(request: FastAPIRequest) -> RedirectResponse:
     return for_test_token_cookie_return("dummy_google_member_001")
 
 
+@router.get("/logined-{user_name}", summary="For testing: log in as a user by name without Google OAuth")
+def login_as_dummy_user_by_name(user_name: str, request: FastAPIRequest) -> RedirectResponse:
+    return for_test_token_cookie_return_by_name(user_name)
+
+
 def for_test_token_cookie_return(id: str) -> RedirectResponse:
     session = get_session()
     try:
         user = session.query(models.AppUser).filter(models.AppUser.provider_user_id == id).first()
+        if user is None:
+            raise HTTPException(status_code=404, detail="Test user not found.")
+        if user.status != "ACTIVE":
+            raise HTTPException(status_code=403, detail=f"User is not active. status={user.status}")
+        user.last_login_at = datetime.now()
+        session.commit()
+        session.refresh(user)
     except Exception as exc:
+        session.rollback()
+        if isinstance(exc, HTTPException):
+            raise
         raise HTTPException(status_code=500, detail="Database error or user not found.") from exc
     finally:
         session.close()
 
     jwt_token = create_jwt_token(user)
+    response = RedirectResponse(
+        url=_frontend_redirect_url(
+            "/projects",
+            auth="success",
+            message="Login successful",
+        ),
+        status_code=302,
+    )
+    _set_auth_cookie(response, jwt_token)
+    return response
+
+
+def for_test_token_cookie_return_by_name(user_name: str) -> RedirectResponse:
+    normalized_name = user_name.strip()
+    if not normalized_name:
+        raise HTTPException(status_code=400, detail="User name is required.")
+
+    session = get_session()
+    try:
+        users = (
+            session.query(models.AppUser)
+            .filter(models.AppUser.name == normalized_name)
+            .all()
+        )
+        if not users:
+            raise HTTPException(status_code=404, detail="Test user not found.")
+        if len(users) > 1:
+            raise HTTPException(status_code=409, detail="Multiple users have the same name.")
+
+        user = users[0]
+        if user.status != "ACTIVE":
+            raise HTTPException(status_code=403, detail=f"User is not active. status={user.status}")
+
+        user.last_login_at = datetime.now()
+        session.commit()
+        session.refresh(user)
+
+        jwt_token = create_jwt_token(user)
+    except Exception as exc:
+        session.rollback()
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail="Database error or user not found.") from exc
+    finally:
+        session.close()
+
     response = RedirectResponse(
         url=_frontend_redirect_url(
             "/projects",
