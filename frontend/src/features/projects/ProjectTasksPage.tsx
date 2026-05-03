@@ -27,6 +27,7 @@ import { ProjectTaskCreateOverlay } from "./ProjectTaskCreateOverlay";
 import { ProjectTaskEditOverlay } from "./ProjectTaskEditOverlay";
 import { ActivityLogOverlay } from "./ActivityLogOverlay";
 import { TaskReopenOverlay } from "./TaskReopenOverlay";
+import { TaskCompleteConfirmOverlay } from "./TaskCompleteConfirmOverlay";
 import "./ProjectTasksPage.css";
 
 type ProjectTasksPageProps = {
@@ -58,6 +59,7 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project, onR
     originalStatus: TaskStatus;
     targetStatus: TaskStatus;
   } | null>(null);
+  const [pendingCompleteTask, setPendingCompleteTask] = useState<ProjectWorkItemSummary | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -224,6 +226,8 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project, onR
           originalStatus: itemToUpdate.status as TaskStatus,
           targetStatus: overContainer as TaskStatus
         });
+      } else if (itemToUpdate.status !== 'DONE' && overContainer === 'DONE') {
+        setPendingCompleteTask(itemToUpdate);
       } else {
         // Optimistic update
         const originalStatus = itemToUpdate.status;
@@ -442,6 +446,22 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project, onR
           }}
           onSuccess={() => {
             setPendingDoneTask(null);
+            loadItems();
+            if (onRefresh) onRefresh();
+          }}
+        />
+      )}
+
+      {pendingCompleteTask && (
+        <TaskCompleteConfirmOverlay
+          projectId={project.id}
+          task={pendingCompleteTask}
+          onClose={() => {
+            setPendingCompleteTask(null);
+            loadItems();
+          }}
+          onSuccess={() => {
+            setPendingCompleteTask(null);
             loadItems();
             if (onRefresh) onRefresh();
           }}

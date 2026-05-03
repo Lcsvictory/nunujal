@@ -538,13 +538,20 @@ export function ProjectGanttChart({
 
     const scheduleStart = (task as any).schedule?.start_date;
     const scheduleEnd = (task as any).schedule?.end_date;
+    const nextStatus = toApiStatus(task.status_code || "TODO");
 
     try {
       if (isNew) {
+        if (
+          nextStatus === "DONE" &&
+          !window.confirm(`"${title}" 할일을 완료 상태로 생성하시겠습니까?\n\n실제 작업이 끝난 경우에만 완료로 저장하세요.`)
+        ) {
+          return;
+        }
         const payload: CreateProjectWorkItemPayload = {
           title,
           description: task.description ? task.description.trim() : "",
-          status: toApiStatus(task.status_code || "TODO"),
+          status: nextStatus,
           priority: task.priority_code || "MEDIUM",
           assignee_user_id: task.assignee_user_id ? Number(task.assignee_user_id) : null,
           timeline_start_date: toLocalIsoDate(startOfDay(scheduleStart ?? task.start_date! ?? new Date())),
@@ -568,10 +575,17 @@ export function ProjectGanttChart({
         ganttRef.current?.showQuickInfo(nextItem.id);
       } else {
         const currentItem = workItemMapRef.current.get(taskId)!;
+        if (
+          currentItem.status !== "done" &&
+          nextStatus === "DONE" &&
+          !window.confirm(`"${title}" 할일을 완료로 이동하시겠습니까?\n\n끝나지 않은 작업을 완료로 옮기면 팀의 진행률과 기여도 판단에 영향을 줄 수 있습니다.`)
+        ) {
+          return;
+        }
         const payload: UpdateProjectWorkItemPayload = {
           title,
           description: task.description ? task.description.trim() : "",
-          status: toApiStatus(task.status_code),
+          status: nextStatus,
           priority: task.priority_code,
           assignee_user_id: task.assignee_user_id ? Number(task.assignee_user_id) : null,
           timeline_start_date: toLocalIsoDate(startOfDay(scheduleStart ?? task.start_date! ?? parseLocalDate(currentItem.startDate))),

@@ -205,3 +205,40 @@
   color: var(--danger);
 }
 
+.task-status-confirm-card {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.task-status-confirm-card span {
+  color: #6c757d;
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.task-status-confirm-card strong {
+  color: #212529;
+  display: block;
+  font-size: 16px;
+}
+
+.task-status-confirm-card p {
+  color: #495057;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
+.task-status-confirm-warning {
+  background: #fff9db;
+  border: 1px solid #ffe066;
+  border-radius: 8px;
+  color: #8d6b00;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+  padding: 12px 14px;
+}
