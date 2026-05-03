@@ -204,6 +204,103 @@ export type ProjectActivityListResponse = {
   available_tags: string[];
 };
 
+export type ContributionFeedbackReview = {
+  id: number;
+  request_type: string;
+  request_status: string;
+  ai_impact_mode: string;
+  content: string;
+  resolution_note: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+  author: {
+    id: number;
+    name: string;
+    profile_image_url?: string | null;
+  } | null;
+  target_user: {
+    id: number;
+    name: string;
+    profile_image_url?: string | null;
+  } | null;
+  contribution_result_id: number | null;
+};
+
+export type ContributionResult = {
+  id: number;
+  target_user: {
+    id: number;
+    name: string;
+    profile_image_url?: string | null;
+  } | null;
+  reference_score: number;
+  confidence_score: number;
+  result_status: string;
+  execution_score: number;
+  collaboration_score: number;
+  documentation_score: number;
+  problem_solving_score: number;
+  disputed_activity_count: number;
+  down_weighted_activity_count: number;
+  summary: string;
+  rationale: string;
+  public_explanation: string;
+  uncertainty_note: string;
+  warning_note: string;
+  created_at: string;
+  feedback_reviews: ContributionFeedbackReview[];
+};
+
+export type ContributionAnalysis = {
+  id: number;
+  project_id: number;
+  requested_by_user_id: number;
+  analysis_start_date: string;
+  analysis_end_date: string;
+  model_name: string;
+  prompt_version: string;
+  policy_version: string;
+  analysis_mode: string;
+  snapshot_at: string;
+  status: string;
+  input_summary: string;
+  disclaimer: string;
+  created_at: string;
+  completed_at: string | null;
+  results: ContributionResult[];
+};
+
+export type ContributionStaleSummary = {
+  needs_reassessment: boolean;
+  reason: string;
+  changed_activity_count: number;
+  days_since_latest_analysis: number | null;
+  open_dispute_count: number;
+};
+
+export type ContributionLatestResponse = {
+  analysis: ContributionAnalysis | null;
+  active_analysis: ContributionAnalysis | null;
+  can_assess: boolean;
+  is_leader: boolean;
+  has_my_pending_assessment: boolean;
+  my_user_id: number;
+  stale: ContributionStaleSummary;
+  open_feedback_reviews: ContributionFeedbackReview[];
+  recent_feedback_reviews: ContributionFeedbackReview[];
+};
+
+export type ContributionEventMessage = {
+  type: "snapshot" | "queued" | "processing" | "completed" | "failed";
+  event: {
+    type: string;
+    project_id: number;
+    analysis_id: number | null;
+    status: string | null;
+  } | null;
+  payload: ContributionLatestResponse;
+};
+
 export type CreateProjectWorkItemPayload = {
   title: string;
   description: string;

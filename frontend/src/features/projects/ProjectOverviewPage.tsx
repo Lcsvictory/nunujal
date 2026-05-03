@@ -56,6 +56,7 @@ function buildInitials(name: string | undefined): string {
 }
 
 import { ProjectActivitiesPage } from "./ProjectActivitiesPage";
+import { ProjectContributionPage } from "./ProjectContributionPage";
 
 export function ProjectOverviewPage({
   projectId,
@@ -384,6 +385,10 @@ export function ProjectOverviewPage({
 
     if (activeSection === "activities") {
       return project ? <ProjectActivitiesPage project={project} onRefresh={loadProject} /> : null;
+    }
+
+    if (activeSection === "contribution") {
+      return project ? <ProjectContributionPage project={project} /> : null;
     }
 
     if (activeSection === "profile" && project) {

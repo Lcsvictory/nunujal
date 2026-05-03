@@ -1,5 +1,8 @@
-import { apiJsonRequest, apiRequest, getApiWebSocketBaseUrl } from "../../lib/api";
+import { apiJsonRequest, apiRequest, getApiBaseUrl, getApiWebSocketBaseUrl } from "../../lib/api";
 import type {
+  ContributionAnalysis,
+  ContributionFeedbackReview,
+  ContributionLatestResponse,
   CreateProjectWorkItemDependencyPayload,
   CreateProjectPayload,
   CreateProjectWorkItemPayload,
@@ -214,5 +217,33 @@ export async function toggleActivityReaction(
     `/api/projects/${projectId}/activities/${activityId}/reactions`,
     "POST",
     { reaction_type: reactionType }
+  );
+}
+
+export function fetchProjectContributionLatest(projectId: number): Promise<ContributionLatestResponse> {
+  return apiRequest<ContributionLatestResponse>(`/api/projects/${projectId}/contribution/latest`);
+}
+
+export function getProjectContributionEventsUrl(projectId: number): string {
+  return `${getApiBaseUrl()}/api/projects/${projectId}/contribution/events`;
+}
+
+export function runProjectContributionAssessment(projectId: number): Promise<{ analysis: ContributionAnalysis | null; queued: boolean }> {
+  return apiJsonRequest<{ analysis: ContributionAnalysis | null; queued: boolean }>(
+    `/api/projects/${projectId}/contribution/assess`,
+    "POST",
+    {},
+  );
+}
+
+export function createContributionObjection(
+  projectId: number,
+  resultId: number,
+  content: string,
+): Promise<{ feedback_review: ContributionFeedbackReview; analysis: ContributionAnalysis | null; queued: boolean }> {
+  return apiJsonRequest<{ feedback_review: ContributionFeedbackReview; analysis: ContributionAnalysis | null; queued: boolean }>(
+    `/api/projects/${projectId}/contribution/results/${resultId}/objections`,
+    "POST",
+    { content },
   );
 }
