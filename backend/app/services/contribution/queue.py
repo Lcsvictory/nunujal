@@ -8,7 +8,7 @@ from app.core.config import get_settings
 from app.database import get_session
 import app.models as models
 from app.services.contribution.evaluator import process_contribution_analysis
-from app.services.contribution.providers.google_gemma import GoogleGemmaContributionProvider
+from app.services.contribution.providers.google_gemini import GoogleGeminiContributionProvider
 from app.services.contribution.providers.ollama import OllamaContributionProvider
 
 
@@ -203,8 +203,8 @@ class ContributionAssessmentQueue:
             self.publish(project_id, "processing", analysis_id=analysis.id, status=analysis.status)
 
             provider_name = settings.contribution_ai_provider.lower()
-            if provider_name in {"google", "google_gemma", "gemini", "gemma"}:
-                provider = GoogleGemmaContributionProvider(
+            if provider_name in {"google", "google_gemini", "google_gemma", "gemini", "gemma"}:
+                provider = GoogleGeminiContributionProvider(
                     api_key=settings.gemini_api_key,
                     thinking_level=settings.google_genai_thinking_level,
                     thinking_budget=settings.google_genai_thinking_budget,
