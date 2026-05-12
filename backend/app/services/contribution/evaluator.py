@@ -136,6 +136,35 @@ def _build_dispute_resolution_note(
     return "\n".join(lines)
 
 
+def _latest_completed_result_text_by_user(
+    session: Session,
+    project_id: int,
+) -> dict[int, dict[str, str | None]]:
+    latest_analysis = (
+        session.query(models.AiAnalysis)
+        .options(joinedload(models.AiAnalysis.contribution_results))
+        .filter(
+            models.AiAnalysis.project_id == project_id,
+            models.AiAnalysis.status == "COMPLETED",
+        )
+        .order_by(models.AiAnalysis.completed_at.desc(), models.AiAnalysis.id.desc())
+        .first()
+    )
+    if latest_analysis is None:
+        return {}
+
+    return {
+        result.target_user_id: {
+            "summary": result.summary,
+            "rationale": result.rationale,
+            "public_explanation": result.public_explanation,
+            "uncertainty_note": result.uncertainty_note,
+            "warning_note": result.warning_note,
+        }
+        for result in latest_analysis.contribution_results
+    }
+
+
 def run_contribution_assessment(
     session: Session,
     project: models.Project,
@@ -232,6 +261,11 @@ def process_contribution_analysis(
         mode=analysis.analysis_mode,
         requested_by_user_id=analysis.requested_by_user_id,
     )
+    preserved_result_text_by_user = (
+        _latest_completed_result_text_by_user(session, project.id)
+        if analysis.analysis_mode == "DISPUTE_AWARE"
+        else {}
+    )
     analysis.status = "PROCESSING"
     analysis.input_summary = "AI 기여도 평가 결과를 생성 중입니다."
     analysis.snapshot_at = datetime.now()
@@ -265,6 +299,7 @@ def process_contribution_analysis(
             target_user_id = int(member_result["user_id"])
             contribution_percent = member_result["contribution_percent"]
             new_scores[target_user_id] = _clamp_score(contribution_percent)
+            preserved_text = preserved_result_text_by_user.get(target_user_id, {})
             result_status = _string_value(member_result.get("result_status"), "NORMAL").upper()
             if result_status not in ALLOWED_RESULT_STATUSES:
                 result_status = "NORMAL"
@@ -280,11 +315,22 @@ def process_contribution_analysis(
                 problem_solving_score=_clamp_score(member_result.get("problem_solving_score", 0)),
                 disputed_activity_count=1 if result_status == "DISPUTED" else 0,
                 down_weighted_activity_count=0,
-                summary=_string_value(member_result.get("summary"), "요약 없음"),
-                rationale=_string_value(member_result.get("rationale"), "근거 없음"),
-                public_explanation=_string_value(member_result.get("public_explanation"), "설명 없음"),
-                uncertainty_note=_string_value(member_result.get("uncertainty_note")),
-                warning_note=_string_value(member_result.get("warning_note")),
+                summary=_string_value(preserved_text.get("summary") or member_result.get("summary"), "요약 없음"),
+                rationale=_string_value(preserved_text.get("rationale") or member_result.get("rationale"), "근거 없음"),
+                public_explanation=_string_value(
+                    preserved_text.get("public_explanation") or member_result.get("public_explanation"),
+                    "설명 없음",
+                ),
+                uncertainty_note=_string_value(
+                    preserved_text.get("uncertainty_note")
+                    if preserved_text.get("uncertainty_note") is not None
+                    else member_result.get("uncertainty_note")
+                ),
+                warning_note=_string_value(
+                    preserved_text.get("warning_note")
+                    if preserved_text.get("warning_note") is not None
+                    else member_result.get("warning_note")
+                ),
             )
             session.add(contribution_result)
 

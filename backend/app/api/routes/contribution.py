@@ -66,6 +66,10 @@ def _can_view_feedback_review(
         return True
     if review.author_user_id == user_id:
         return True
+    if review.target_user_id == user_id:
+        return True
+    if review.target_user_id is None and review.contribution_result and review.contribution_result.target_user_id == user_id:
+        return True
     return False
 
 

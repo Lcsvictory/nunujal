@@ -24,6 +24,11 @@
   font-size: 14px;
 }
 
+.contribution-header .contribution-runtime-note {
+  color: #1864ab;
+  font-weight: 700;
+}
+
 .contribution-actions {
   display: flex;
   gap: 8px;

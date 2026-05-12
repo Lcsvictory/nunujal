@@ -219,9 +219,10 @@ export function ProjectContributionPage({ project }: ProjectContributionPageProp
       : isGenerating
         ? "재측정 요청 추가"
         : "기여도 측정";
-  const totalScore = results.reduce((sum, result) => sum + Math.max(0, result.reference_score), 0) || 1;
+  const pieResults = results.filter((result) => result.reference_score > 0);
+  const totalScore = pieResults.reduce((sum, result) => sum + Math.max(0, result.reference_score), 0) || 1;
   let cursor = 0;
-  const pieSegments = results.map((result, index) => {
+  const pieSegments = pieResults.map((result, index) => {
     const value = Math.max(0, result.reference_score) / totalScore;
     const segment = {
       result,
@@ -232,7 +233,8 @@ export function ProjectContributionPage({ project }: ProjectContributionPageProp
     cursor += value;
     return segment;
   });
-  const highlightedResult = results.find((result) => result.id === hoveredResultId) ?? myResult ?? results[0] ?? null;
+  const defaultHighlightedResult = myResult && myResult.reference_score > 0 ? myResult : pieResults[0] ?? null;
+  const highlightedResult = pieResults.find((result) => result.id === hoveredResultId) ?? defaultHighlightedResult;
 
   const getReviewsForResult = (result: ContributionResult) => {
     const targetUserId = result.target_user?.id;
@@ -277,10 +279,10 @@ export function ProjectContributionPage({ project }: ProjectContributionPageProp
           ) : (
             <>
               {isGenerating ? (
-                <div className="contribution-status-banner">
-                  AI가 새 기여도 결과를 생성 중입니다. 완료되면 자동으로 화면이 갱신됩니다.
-                  {openDisputes.length ? ` 처리 대기 중인 이의제기 ${openDisputes.length}건이 반영됩니다.` : ""}
-                </div>
+	                <div className="contribution-status-banner">
+	                  AI가 새 기여도 결과를 생성 중입니다. 보통 10~20초 정도 걸리며, 완료되면 자동으로 화면이 갱신됩니다.
+	                  {openDisputes.length ? ` 처리 대기 중인 이의제기 ${openDisputes.length}건이 반영됩니다.` : ""}
+	                </div>
               ) : null}
 
               <section className="contribution-overview">
@@ -487,10 +489,11 @@ export function ProjectContributionPage({ project }: ProjectContributionPageProp
         <div className="contribution-objection-overlay" onClick={() => setObjectionTarget(null)}>
           <div className="contribution-objection-modal" onClick={(event) => event.stopPropagation()}>
             <h3>이의제기</h3>
-            <p>
-              {objectionTarget.target_user?.id === data?.my_user_id ? "내" : `${objectionTarget.target_user?.name ?? "대상"}님의`} 현재 기여도
-              {` ${objectionTarget.reference_score.toFixed(1)}%`}에 대한 의견을 작성하세요. 제출하면 AI 재측정 큐에 등록됩니다.
-            </p>
+	            <p>
+	              {objectionTarget.target_user?.id === data?.my_user_id ? "내" : `${objectionTarget.target_user?.name ?? "대상"}님의`} 현재 기여도
+	              {` ${objectionTarget.reference_score.toFixed(1)}%`}에 대한 의견을 작성하세요. 제출하면 AI 재측정 큐에 등록됩니다.
+	              반영에는 보통 10~20초 정도 소요됩니다.
+	            </p>
             <label className="contribution-objection-field">
               <span>이의 유형</span>
               <select
