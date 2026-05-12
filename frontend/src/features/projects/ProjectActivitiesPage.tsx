@@ -474,10 +474,14 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
                 </div>
                 
                 <div className="activity-card-body">
-                  <strong>{activity.actor.name}</strong>님이 
+                  <strong>{activity.actor.name}</strong>이(가)
                   {activity.activity_category === 'PEER_SUPPORT' && activity.target_user && (
-                    <span className="highlight-target"> {activity.target_user.name}님 의 </span>
+                    <>
+                      <span className="highlight-target"> {activity.target_user.name}</span>
+                      의
+                    </>
                   )}
+                  
                                     {(activity.work_items && activity.work_items.length > 0) ? (
                     <span style={{ margin: '0 0.4rem' }}>
                       {[...activity.work_items].sort((a: any, b: any) => a.id - b.id).map((w: any) => (

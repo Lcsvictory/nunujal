@@ -121,10 +121,6 @@ export function MyPage({
     }
 
     const role = formState.role.trim();
-    if (!role) {
-      setErrorMessage("역할은 비워둘 수 없습니다.");
-      return;
-    }
 
     setIsSaving(true);
     setErrorMessage(null);
@@ -207,7 +203,7 @@ export function MyPage({
               </div>
               <div>
                 <dt>역할</dt>
-                <dd>{membership?.position_label ?? "프로젝트에서 확인 가능"}</dd>
+                <dd>{membership?.position_label || ""}</dd>
               </div>
             </dl>
 
@@ -218,9 +214,9 @@ export function MyPage({
                   value={formState.role}
                   onChange={(event) => setFormState({ role: event.target.value })}
                   disabled={isSaving}
-                  maxLength={100}
-                  placeholder="예: 프론트엔드, 자료 조사, 팀장"
-                />
+	                  maxLength={100}
+	                  placeholder="비워둘 수 있습니다"
+	                />
               </label>
             ) : null}
 

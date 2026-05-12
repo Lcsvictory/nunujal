@@ -28,6 +28,7 @@ type ProjectGanttChartProps = {
   endDate: string;
   projectMembers: ProjectMemberSummary[];
   isVisible: boolean;
+  onWorkItemsChanged?: () => void;
 };
 
 type WorkItemStatus = "done" | "in_progress" | "planned";
@@ -381,6 +382,7 @@ export function ProjectGanttChart({
   endDate,
   projectMembers,
   isVisible,
+  onWorkItemsChanged,
 }: ProjectGanttChartProps) {
   const shellRef = useRef<HTMLElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -394,6 +396,7 @@ export function ProjectGanttChart({
   const workItemMapRef = useRef<Map<string, ChartWorkItem>>(new Map());
   const dependenciesRef = useRef<ChartWorkItemDependency[]>([]);
   const projectMembersRef = useRef(projectMembers);
+  const onWorkItemsChangedRef = useRef(onWorkItemsChanged);
   const verticalZoomIndexRef = useRef(1);
   const suppressZoomCenterRef = useRef(false);
   const isApplyingSnapshotRef = useRef(false);
@@ -456,6 +459,7 @@ export function ProjectGanttChart({
   workItemMapRef.current = new Map(workItems.map((item) => [item.id, item]));
   dependenciesRef.current = dependencies;
   projectMembersRef.current = projectMembers;
+  onWorkItemsChangedRef.current = onWorkItemsChanged;
   verticalZoomIndexRef.current = verticalZoomIndex;
 
   useEffect(() => {
@@ -571,6 +575,7 @@ export function ProjectGanttChart({
         setSelectedWorkItemId(nextItem.id);
         setLastSyncedAt(new Date().toISOString());
         setErrorMessage(null);
+        onWorkItemsChangedRef.current?.();
         ganttRef.current?.hideLightbox();
         ganttRef.current?.showQuickInfo(nextItem.id);
       } else {
@@ -600,6 +605,7 @@ export function ProjectGanttChart({
         setSelectedWorkItemId(nextItem.id);
         setLastSyncedAt(new Date().toISOString());
         setErrorMessage(null);
+        onWorkItemsChangedRef.current?.();
         ganttRef.current?.hideLightbox();
         ganttRef.current?.showQuickInfo(nextItem.id);
       }
@@ -635,6 +641,7 @@ export function ProjectGanttChart({
       setSelectedWorkItemId(null);
       setLastSyncedAt(new Date().toISOString());
       setErrorMessage(null);
+      onWorkItemsChangedRef.current?.();
       ganttRef.current?.hideQuickInfo();
       ganttRef.current?.hideLightbox();
     } catch (error) {
@@ -675,6 +682,9 @@ export function ProjectGanttChart({
         const payload = JSON.parse(event.data) as { type?: string };
         if (payload.type === "work_items_changed" || payload.type === "work_items_connected") {
           void refreshSnapshot({ background: true });
+          if (payload.type === "work_items_changed") {
+            onWorkItemsChangedRef.current?.();
+          }
         }
       } catch {
         void refreshSnapshot({ background: true });
@@ -1180,6 +1190,7 @@ export function ProjectGanttChart({
       })
         .then(() => {
           setErrorMessage(null);
+          onWorkItemsChangedRef.current?.();
           void refreshSnapshot({ background: true });
         })
         .catch((error: unknown) => {

@@ -224,6 +224,7 @@ export function ProjectOverviewPage({
           endDate={project.end_date}
           projectMembers={project.members}
           isVisible={currentSection === "overview"}
+          onWorkItemsChanged={loadProject}
         />
 
         <section className="surface-panel workspace-project-card">
@@ -260,7 +261,7 @@ export function ProjectOverviewPage({
           <div className="workspace-summary-text" style={{ padding: "0 24px 24px 24px", display: "flex", flexDirection: "column", gap: "12px", fontSize: "1rem", lineHeight: "1.6" }}>
             <p>
               프로젝트 기간 : <strong>{formatDateRange(project.start_date, project.end_date)}</strong> <br/>
-              <strong>총 {project.member_count}명</strong>(내 직책: {project.my_membership.position_label})<br/> 
+              <strong>총 {project.member_count}명</strong><br/> 
             </p>
             <div style={{ padding: "12px 16px", background: "var(--background-modifier-hover, rgba(0,0,0,0.05))", borderRadius: "8px", borderLeft: "4px solid var(--color-primary, #0066ff)", display: "inline-block", alignSelf: "flex-start" }}>
               <span style={{ fontSize: "0.85rem", color: "var(--text-muted, #666)" }}>참여 코드 (정책: {formatJoinPolicy(project.join_policy)})</span><br/>
@@ -287,7 +288,7 @@ export function ProjectOverviewPage({
             <div className="progress-breakdown">
               <div>
                 <span>할일</span>
-                <strong>{project.overview.todo_work_items}</strong>
+                <strong>{project.overview.total_work_items}</strong>
               </div>
               <div>
                 <span>진행 중</span>
@@ -296,6 +297,10 @@ export function ProjectOverviewPage({
               <div>
                 <span>완료</span>
                 <strong>{project.overview.done_work_items}</strong>
+              </div>
+              <div>
+                <span>예정</span>
+                <strong>{project.overview.todo_work_items}</strong>
               </div>
             </div>
           </section>

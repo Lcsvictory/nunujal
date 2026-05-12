@@ -12,6 +12,7 @@ import { LogoutIcon } from "./ProjectWorkspaceIcons";
 type Notice = {
   tone: "success" | "error";
   message: string;
+  title?: string;
 } | null;
 
 type FilterType = "ALL" | "IN_PROGRESS" | "LEADER";
@@ -106,14 +107,15 @@ export function ProjectsPage({
   };
 
   const handleJoined = async (result: JoinProjectResponse) => {
+    const isAutoApproved = result.membership_created || result.join_request.request_status === "APPROVED";
     setNotice({
-      tone: result.membership_created ? "success" : "success",
-      message: result.message,
+      tone: "success",
+      title: isAutoApproved ? "프로젝트 참여 완료" : "참여 요청 전송",
+      message: isAutoApproved
+        ? `${result.project.title}에 즉시 참여되었습니다. 목록에서 프로젝트를 선택해 입장하세요.`
+        : `${result.project.title} 참여 요청을 보냈습니다. 팀장 승인 후 목록에서 확인할 수 있습니다.`,
     });
     await loadProjects();
-    if (result.membership_created) {
-      onOpenProject(result.project.id);
-    }
   };
 
   const handleLogout = async () => {
@@ -216,7 +218,8 @@ export function ProjectsPage({
           <div
             className={`surface-banner ${notice.tone === "error" ? "surface-banner-error" : ""}`}
           >
-            {notice.message}
+            {notice.title ? <strong>{notice.title}</strong> : null}
+            <span>{notice.message}</span>
           </div>
         ) : null}
 

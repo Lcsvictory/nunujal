@@ -54,7 +54,7 @@ def create_project_join_request(
         if existing_membership and existing_membership.left_at is None:
             raise HTTPException(status_code=409, detail="You are already an active member of this project.")
 
-        requested_position_label = (payload.requested_position_label or "").strip() or "Team Member"
+        requested_position_label = (payload.requested_position_label or "").strip()
         request_message = (payload.request_message or "").strip() or None
         now = datetime.now()
 

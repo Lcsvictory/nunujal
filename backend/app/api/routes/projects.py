@@ -1596,8 +1596,6 @@ def update_project_member(
         changed_fields = payload.model_fields_set
         if "position_label" in changed_fields and payload.position_label is not None:
             position_label = payload.position_label.strip()
-            if not position_label:
-                raise HTTPException(status_code=400, detail="Role is required.")
             if len(position_label) > 100:
                 raise HTTPException(status_code=400, detail="Role must be 100 characters or fewer.")
             target_member.position_label = position_label
@@ -1721,7 +1719,7 @@ def review_project_join_request(
             project_role = payload.reviewed_project_role.upper() if payload.reviewed_project_role else "MEMBER"
             if project_role not in ("LEADER", "MEMBER"):
                 project_role = "MEMBER"
-            position_label = payload.reviewed_position_label.strip() if payload.reviewed_position_label else (join_request.requested_position_label or "팀원")
+            position_label = payload.reviewed_position_label.strip() if payload.reviewed_position_label else (join_request.requested_position_label or "")
 
             join_request.reviewed_project_role = project_role
             join_request.reviewed_position_label = position_label

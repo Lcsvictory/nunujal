@@ -23,6 +23,7 @@ export function ProjectJoinOverlay({
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const isAutoApprove = preview?.project.join_policy === "AUTO_APPROVE";
 
   useEffect(() => {
     if (!open) {
@@ -93,7 +94,7 @@ export function ProjectJoinOverlay({
       open={open}
       onClose={onClose}
       title="프로젝트 참여"
-      description="참여 코드를 확인한 뒤, 현재 화면에서 바로 참여 요청을 보낼 수 있습니다."
+      description="참여 코드를 확인한 뒤 프로젝트 참여를 진행합니다."
     >
       <form className="overlay-form" onSubmit={handleSubmit}>
         <div className="field-row field-row-tight">
@@ -124,6 +125,11 @@ export function ProjectJoinOverlay({
               </div>
               <span className="status-pill">{formatProjectStatus(preview.project.status)}</span>
             </div>
+            {isAutoApprove ? (
+              <p className="preview-note">
+                이 프로젝트는 참여 즉시 승인됩니다. 완료 후 프로젝트 선택 화면에서 직접 입장하세요.
+              </p>
+            ) : null}
             <dl className="preview-meta">
               <div>
                 <dt>기간</dt>
@@ -173,7 +179,7 @@ export function ProjectJoinOverlay({
             className="button button-primary"
             disabled={isSubmitting || preview?.already_member === true}
           >
-            {isSubmitting ? "요청 중..." : "참여 요청 보내기"}
+            {isSubmitting ? "처리 중..." : isAutoApprove ? "바로 참여하기" : "참여 요청 보내기"}
           </button>
         </div>
       </form>
