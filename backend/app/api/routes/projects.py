@@ -8,6 +8,7 @@ from fastapi import APIRouter, Header, HTTPException, Request as FastAPIRequest,
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, aliased, selectinload, joinedload
+from starlette.websockets import WebSocketState
 
 import app.models as models
 from app.core.config import get_settings
@@ -25,6 +26,10 @@ from app.services.upload_files import (
 
 router = APIRouter()
 settings = get_settings()
+
+
+def _is_websocket_not_connected_error(exc: RuntimeError) -> bool:
+    return "WebSocket is not connected" in str(exc)
 
 
 class CreateProjectRequest(BaseModel):
@@ -1465,6 +1470,8 @@ async def project_work_item_events(
         session.close()
 
         await work_item_connection_manager.connect(project_id, websocket)
+        if websocket.application_state != WebSocketState.CONNECTED:
+            return
         await websocket.send_json(
             {
                 "type": "work_items_connected",
@@ -1480,6 +1487,9 @@ async def project_work_item_events(
         await websocket.close(code=close_code)
     except WebSocketDisconnect:
         pass
+    except RuntimeError as exc:
+        if not _is_websocket_not_connected_error(exc):
+            raise
     finally:
         work_item_connection_manager.disconnect(project_id, websocket)
         try:
@@ -1515,6 +1525,8 @@ async def project_presence_events(
         session.close()
 
         await presence_manager.connect(project_id, user_info, websocket)
+        if websocket.application_state != WebSocketState.CONNECTED:
+            return
 
         while True:
             await websocket.receive_text()
@@ -1523,6 +1535,9 @@ async def project_presence_events(
         await websocket.close(code=close_code)
     except WebSocketDisconnect:
         pass
+    except RuntimeError as exc:
+        if not _is_websocket_not_connected_error(exc):
+            raise
     finally:
         await presence_manager.disconnect(project_id, websocket)
         try:
