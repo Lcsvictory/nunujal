@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import time
+from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException, Request as FastAPIRequest
@@ -23,7 +24,7 @@ def _b64url_decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + padding)
 
 
-def decode_jwt_token(token: str) -> dict[str, Any]:
+def decode_jwt_token(token: str, *, expected_type: str | None = None) -> dict[str, Any]:
     try:
         header_b64, payload_b64, signature_b64 = token.split(".")
     except ValueError as exc:
@@ -37,6 +38,9 @@ def decode_jwt_token(token: str) -> dict[str, Any]:
     payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
     if payload.get("exp", 0) < int(time.time()):
         raise HTTPException(status_code=401, detail="Token has expired.")
+
+    if expected_type and payload.get("type") != expected_type:
+        raise HTTPException(status_code=401, detail="Invalid token type.")
 
     return payload
 
@@ -57,8 +61,27 @@ def get_authenticated_user_from_token(
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    payload = decode_jwt_token(token)
-    user = session.query(models.AppUser).filter(models.AppUser.id == int(payload["sub"])).first()
+    payload = decode_jwt_token(token, expected_type="access")
+    try:
+        user_id = int(payload["sub"])
+        session_id = int(payload["sid"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=401, detail="Invalid session token.") from exc
+
+    auth_session = (
+        session.query(models.AuthSession)
+        .filter(
+            models.AuthSession.id == session_id,
+            models.AuthSession.user_id == user_id,
+            models.AuthSession.revoked_at.is_(None),
+            models.AuthSession.expires_at > datetime.now(),
+        )
+        .first()
+    )
+    if auth_session is None:
+        raise HTTPException(status_code=401, detail="Session has expired or was revoked.")
+
+    user = session.query(models.AppUser).filter(models.AppUser.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=401, detail="Authenticated user was not found.")
 

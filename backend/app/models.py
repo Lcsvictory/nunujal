@@ -89,6 +89,10 @@ class AppUser(Base):
     )
     requested_analyses: Mapped[list["AiAnalysis"]] = relationship(back_populates="requested_by_user")
     contribution_results: Mapped[list["ContributionResult"]] = relationship(back_populates="target_user")
+    auth_sessions: Mapped[list["AuthSession"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
     authored_feedback_reviews: Mapped[list["FeedbackReview"]] = relationship(
         back_populates="author_user",
         foreign_keys="FeedbackReview.author_user_id",
@@ -102,6 +106,26 @@ class AppUser(Base):
         foreign_keys="FeedbackReview.reviewed_by_user_id",
     )
     uploaded_evidence_items: Mapped[list["Evidence"]] = relationship(back_populates="uploaded_by_user")
+
+
+class AuthSession(Base):
+    __tablename__ = "auth_session"
+    __table_args__ = (
+        UniqueConstraint("refresh_token_hash", name="uq_auth_session_refresh_token_hash"),
+        CheckConstraint("expires_at >= created_at", name="chk_auth_session_expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT, Identity(always=True), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False)
+    refresh_token_hash: Mapped[str] = mapped_column(VARCHAR(128), nullable=False)
+    user_agent: Mapped[str] = mapped_column(TEXT, nullable=True)
+    ip_address: Mapped[str] = mapped_column(VARCHAR(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    last_used_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
+    revoked_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=True)
+
+    user: Mapped[AppUser] = relationship(back_populates="auth_sessions")
 
 
 

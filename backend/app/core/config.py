@@ -10,7 +10,8 @@ class Settings(BaseSettings):
     server_port: int = 8028
     google_redirect_uri: str = "https://nunujal.o-r.kr/api/auth/google/callback"
     jwt_secret: str
-    jwt_expire_minutes: int = 1440
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 14
     contribution_ai_provider: str = "google_gemini"
     ollama_base_url: str = "http://nunujal.o-r.kr:12812"
     gemini_api_key: str | None = None

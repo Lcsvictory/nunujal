@@ -28,6 +28,37 @@ CREATE TABLE app_user (
         CHECK (status IN ('ACTIVE', 'SUSPENDED', 'DELETED'))
 );
 
+CREATE TABLE auth_session (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    user_id BIGINT NOT NULL,
+    refresh_token_hash VARCHAR(128) NOT NULL,
+    user_agent TEXT,
+    ip_address VARCHAR(64),
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    revoked_at TIMESTAMP,
+
+    CONSTRAINT fk_auth_session_user
+        FOREIGN KEY (user_id)
+        REFERENCES app_user(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT uq_auth_session_refresh_token_hash
+        UNIQUE (refresh_token_hash),
+
+    CONSTRAINT chk_auth_session_expires_at
+        CHECK (expires_at >= created_at)
+);
+
+CREATE INDEX idx_auth_session_user_active
+    ON auth_session(user_id, revoked_at);
+
+CREATE INDEX idx_auth_session_expires_at
+    ON auth_session(expires_at);
+
 CREATE TABLE project (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
