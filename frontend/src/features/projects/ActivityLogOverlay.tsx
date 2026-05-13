@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Overlay } from '../../components/Overlay';
 import { apiJsonRequest } from "../../lib/api";
 import { fetchProjectWorkItems } from "./api";
-import type { ProjectWorkItemSummary } from "./types";
+import { FileUploadPicker } from "./ProjectFileAttachments";
+import type { ProjectUploadedFile, ProjectWorkItemSummary } from "./types";
 
 interface ActivityLogOverlayProps {
   projectId: number;
@@ -27,9 +28,13 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
   const [content, setContent] = useState(editContext ? editContext.content : '');
   
   const initialEv = editContext?.evidences?.[0] || {};
-  const [evidenceType, setEvidenceType] = useState(initialEv.evidence_type || 'TEXT');
+  const initialUploadedFiles = (editContext?.evidences ?? [])
+    .map((evidence: any) => evidence.uploaded_file)
+    .filter(Boolean) as ProjectUploadedFile[];
+  const [evidenceType, setEvidenceType] = useState(initialUploadedFiles.length > 0 ? 'FILE' : initialEv.evidence_type || 'TEXT');
   const [evidenceDesc, setEvidenceDesc] = useState(initialEv.description || '');
   const [resourceURL, setResourceUrl] = useState(initialEv.resource_url || '');
+  const [uploadedFiles, setUploadedFiles] = useState<ProjectUploadedFile[]>(initialUploadedFiles);
 
   const [tags, setTags] = useState<string[]>(
     editContext?.activity_type ? editContext.activity_type.split(',').map((t: string) => t.trim()).filter(Boolean) : []
@@ -88,11 +93,20 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
     }
 
     try {
-      const evidences = (evidenceDesc || resourceURL) ? [{
+      const evidences: any[] = (evidenceDesc || resourceURL) ? [{
         evidence_type: evidenceType,
         description: evidenceDesc || '',
         resource_url: resourceURL || null
       }] : [];
+      uploadedFiles.forEach((file) => {
+        evidences.push({
+          evidence_type: file.is_image ? 'IMAGE' : 'FILE',
+          description: evidenceDesc || file.file_name,
+          resource_url: null,
+          file_name: file.file_name,
+          uploaded_file_id: file.id,
+        });
+      });
 
       if (editContext) {
         await apiJsonRequest(`/api/projects/${projectId}/activities/${editContext.id}`, 'PUT', {
@@ -268,7 +282,7 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
              <select value={evidenceType} onChange={e => setEvidenceType(e.target.value)} style={{ marginLeft: '0.5rem', padding: '0.2rem' }}>
                <option value="TEXT">텍스트/코드 (직접 입력)</option>
                <option value="LINK">URL 링크 (GitHub PR, Notion 등)</option>
-               <option value="FILE">파일/이미지</option>
+               <option value="FILE">파일/이미지 업로드</option>
              </select>
           </label>
           <label style={{ display: 'block', marginBottom: '0.5rem' }}>
@@ -280,7 +294,7 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
                style={{ width: '100%', marginTop: '0.25rem', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
              />
           </label>
-          {(evidenceType === 'LINK' || evidenceType === 'FILE') && (
+          {evidenceType === 'LINK' && (
             <label style={{ display: 'block' }}>
               첨부 위치 (URL):
               <input
@@ -291,6 +305,13 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
                 placeholder="https://..."
               />
             </label>
+          )}
+          {evidenceType === 'FILE' && (
+            <FileUploadPicker
+              projectId={projectId}
+              value={uploadedFiles}
+              onChange={setUploadedFiles}
+            />
           )}
         </div>
         

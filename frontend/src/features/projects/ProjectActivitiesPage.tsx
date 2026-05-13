@@ -3,6 +3,7 @@ import './ProjectActivitiesPage.css';
 import { ActivityLogOverlay } from './ActivityLogOverlay';
 import { ApiError, apiJsonRequest } from "../../lib/api";
 import { fetchProjectActivities, fetchProjectWorkItems, toggleActivityReaction } from "./api";
+import { AttachmentList } from "./ProjectFileAttachments";
 import type { ProjectActivityListFilters, ProjectRecentActivity, ProjectDetail } from './types';
 
 type ProjectActivitiesPageProps = {
@@ -514,6 +515,11 @@ export function ProjectActivitiesPage({ project, onRefresh }: ProjectActivitiesP
                             {ev.evidence_type}
                           </span>
                           <span>{ev.description}</span>
+                          {ev.uploaded_file && (
+                            <div style={{ marginTop: '0.5rem' }}>
+                              <AttachmentList files={[ev.uploaded_file]} />
+                            </div>
+                          )}
                           {ev.resource_url && (
                              <div style={{ marginTop: '0.2rem', paddingLeft: '0.5rem', borderLeft: '2px solid #ccc' }}>
                                <a href={ev.resource_url} target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', textDecoration: 'none' }}>

@@ -177,6 +177,36 @@ CREATE TABLE project_member (
         CHECK (left_at IS NULL OR left_at >= joined_at)
 );
 
+CREATE TABLE uploaded_file (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    project_id BIGINT NOT NULL,
+    uploaded_by_user_id BIGINT NOT NULL,
+
+    original_file_name VARCHAR(255) NOT NULL,
+    content_type VARCHAR(255) NOT NULL,
+    file_size_bytes BIGINT NOT NULL,
+    s3_bucket VARCHAR(255) NOT NULL,
+    s3_object_key TEXT NOT NULL,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_uploaded_file_project
+        FOREIGN KEY (project_id)
+        REFERENCES project(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_uploaded_file_uploaded_by_user
+        FOREIGN KEY (uploaded_by_user_id)
+        REFERENCES app_user(id),
+
+    CONSTRAINT uq_uploaded_file_s3_object_key
+        UNIQUE (s3_object_key),
+
+    CONSTRAINT chk_uploaded_file_size_positive
+        CHECK (file_size_bytes > 0)
+);
+
 CREATE TABLE work_item (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
@@ -221,6 +251,27 @@ CREATE TABLE work_item (
         CHECK (
             (completed_at IS NULL OR started_at IS NULL OR completed_at >= started_at)
         )
+);
+
+CREATE TABLE work_item_attachment (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    work_item_id BIGINT NOT NULL,
+    uploaded_file_id BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_work_item_attachment_work_item
+        FOREIGN KEY (work_item_id)
+        REFERENCES work_item(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_work_item_attachment_uploaded_file
+        FOREIGN KEY (uploaded_file_id)
+        REFERENCES uploaded_file(id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT uq_work_item_attachment_file
+        UNIQUE (work_item_id, uploaded_file_id)
 );
 
 CREATE TABLE work_item_dependency (
@@ -705,6 +756,7 @@ CREATE TABLE evidence (
     activity_id BIGINT,
     feedback_review_id BIGINT,
     uploaded_by_user_id BIGINT NOT NULL,
+    uploaded_file_id BIGINT,
 
     evidence_type VARCHAR(20) NOT NULL,
     evidence_role VARCHAR(20) NOT NULL,
@@ -732,6 +784,11 @@ CREATE TABLE evidence (
         FOREIGN KEY (uploaded_by_user_id)
         REFERENCES app_user(id),
 
+    CONSTRAINT fk_evidence_uploaded_file
+        FOREIGN KEY (uploaded_file_id)
+        REFERENCES uploaded_file(id)
+        ON DELETE RESTRICT,
+
     CONSTRAINT chk_evidence_target_exactly_one
         CHECK (
             (activity_id IS NOT NULL AND feedback_review_id IS NULL)
@@ -740,7 +797,7 @@ CREATE TABLE evidence (
         ),
 
     CONSTRAINT chk_evidence_type
-        CHECK (evidence_type IN ('FILE', 'LINK', 'IMAGE')),
+        CHECK (evidence_type IN ('FILE', 'LINK', 'IMAGE', 'TEXT')),
 
     CONSTRAINT chk_evidence_role
         CHECK (evidence_role IN ('SUPPORTING', 'CONTRADICTING', 'OUTPUT')),

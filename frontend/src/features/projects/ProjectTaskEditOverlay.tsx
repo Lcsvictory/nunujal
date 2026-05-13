@@ -2,7 +2,13 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ApiError } from "../../lib/api";
 import { Overlay } from "../../components/Overlay";
 import { updateProjectWorkItem, fetchProjectMembers } from "./api";
-import type { UpdateProjectWorkItemPayload, ProjectMemberSummary, ProjectWorkItemSummary } from "./types";
+import { FileUploadPicker } from "./ProjectFileAttachments";
+import type {
+  ProjectMemberSummary,
+  ProjectUploadedFile,
+  ProjectWorkItemSummary,
+  UpdateProjectWorkItemPayload,
+} from "./types";
 
 type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE";
 
@@ -33,6 +39,7 @@ export function ProjectTaskEditOverlay({
   });
   
   const [members, setMembers] = useState<ProjectMemberSummary[]>([]);
+  const [attachments, setAttachments] = useState<ProjectUploadedFile[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -47,6 +54,7 @@ export function ProjectTaskEditOverlay({
         timeline_start_date: (task as any).timeline_start_date || "",
         timeline_end_date: (task as any).timeline_end_date || "",
       });
+      setAttachments(task.attachments ?? []);
       setIsSubmitting(false);
       setErrorMessage(null);
       
@@ -66,6 +74,7 @@ export function ProjectTaskEditOverlay({
         timeline_end_date: "",
         assignee_user_id: null,
       });
+      setAttachments([]);
     }
   }, [open, task, projectId]);
 
@@ -89,6 +98,7 @@ export function ProjectTaskEditOverlay({
         ...formState,
         title: formState.title.trim(),
         description: formState.description?.trim() || "",
+        attachment_file_ids: attachments.map((file) => file.id),
       });
       onClose();
       await onUpdated();
@@ -226,6 +236,16 @@ export function ProjectTaskEditOverlay({
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="field">
+          <span>첨부 결과물</span>
+          <FileUploadPicker
+            projectId={projectId}
+            value={attachments}
+            onChange={setAttachments}
+            disabled={isSubmitting || readOnly}
+          />
         </label>
 
         {errorMessage ? <p className="form-feedback form-feedback-error">{errorMessage}</p> : null}

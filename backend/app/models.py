@@ -106,6 +106,7 @@ class AppUser(Base):
         foreign_keys="FeedbackReview.reviewed_by_user_id",
     )
     uploaded_evidence_items: Mapped[list["Evidence"]] = relationship(back_populates="uploaded_by_user")
+    uploaded_files: Mapped[list["UploadedFile"]] = relationship(back_populates="uploaded_by_user")
 
 
 class AuthSession(Base):
@@ -177,6 +178,7 @@ class Project(Base):
         cascade="all, delete-orphan",
     )
     work_items: Mapped[list["WorkItem"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    uploaded_files: Mapped[list["UploadedFile"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     work_item_dependencies: Mapped[list["WorkItemDependency"]] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",
@@ -325,6 +327,49 @@ class WorkItem(Base):
         secondary="activity_work_item_link", 
         back_populates="work_items"
     )
+    attachments: Mapped[list["WorkItemAttachment"]] = relationship(
+        back_populates="work_item",
+        cascade="all, delete-orphan",
+        order_by="WorkItemAttachment.created_at",
+    )
+
+
+class UploadedFile(Base):
+    __tablename__ = "uploaded_file"
+    __table_args__ = (
+        UniqueConstraint("s3_object_key", name="uq_uploaded_file_s3_object_key"),
+        CheckConstraint("file_size_bytes > 0", name="chk_uploaded_file_size_positive"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT, Identity(always=True), primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("project.id", ondelete="CASCADE"), nullable=False)
+    uploaded_by_user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=False)
+    original_file_name: Mapped[str] = mapped_column(VARCHAR(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(VARCHAR(255), nullable=False)
+    file_size_bytes: Mapped[int] = mapped_column(BIGINT, nullable=False)
+    s3_bucket: Mapped[str] = mapped_column(VARCHAR(255), nullable=False)
+    s3_object_key: Mapped[str] = mapped_column(TEXT, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+    project: Mapped["Project"] = relationship(back_populates="uploaded_files")
+    uploaded_by_user: Mapped[AppUser] = relationship(back_populates="uploaded_files")
+    work_item_attachments: Mapped[list["WorkItemAttachment"]] = relationship(back_populates="uploaded_file")
+    evidences: Mapped[list["Evidence"]] = relationship(back_populates="uploaded_file")
+
+
+class WorkItemAttachment(Base):
+    __tablename__ = "work_item_attachment"
+    __table_args__ = (
+        UniqueConstraint("work_item_id", "uploaded_file_id", name="uq_work_item_attachment_file"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT, Identity(always=True), primary_key=True)
+    work_item_id: Mapped[int] = mapped_column(ForeignKey("work_item.id", ondelete="CASCADE"), nullable=False)
+    uploaded_file_id: Mapped[int] = mapped_column(ForeignKey("uploaded_file.id", ondelete="RESTRICT"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+    work_item: Mapped["WorkItem"] = relationship(back_populates="attachments")
+    uploaded_file: Mapped["UploadedFile"] = relationship(back_populates="work_item_attachments")
 
 activity_work_item_link = Table(
     "activity_work_item_link",
@@ -718,6 +763,7 @@ class Evidence(Base):
     activity_id: Mapped[int] = mapped_column(ForeignKey("activity.id", ondelete="CASCADE"), nullable=True)
     feedback_review_id: Mapped[int] = mapped_column(ForeignKey("feedback_review.id", ondelete="CASCADE"), nullable=True)
     uploaded_by_user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=False)
+    uploaded_file_id: Mapped[int] = mapped_column(ForeignKey("uploaded_file.id", ondelete="RESTRICT"), nullable=True)
     evidence_type: Mapped[str] = mapped_column(VARCHAR(20), nullable=False)
     evidence_role: Mapped[str] = mapped_column(VARCHAR(20), nullable=False)
     file_name: Mapped[str] = mapped_column(VARCHAR(255), nullable=True)
@@ -736,3 +782,4 @@ class Evidence(Base):
     activity: Mapped["Activity"] = relationship(back_populates="evidence_items")
     feedback_review: Mapped["FeedbackReview"] = relationship(back_populates="evidence_items")
     uploaded_by_user: Mapped[AppUser] = relationship(back_populates="uploaded_evidence_items")
+    uploaded_file: Mapped[UploadedFile] = relationship(back_populates="evidences")

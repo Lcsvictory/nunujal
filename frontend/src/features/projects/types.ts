@@ -78,12 +78,36 @@ export type ProjectRecentActivity = {
     timeline_start_date?: string;
     timeline_end_date?: string;
   }[];
-  evidences?: any[];
+  evidences?: ProjectEvidence[];
   reactions?: {
     reactor_user_id: number;
     reaction_type: string;
     created_at?: string;
   }[];
+};
+
+export type ProjectUploadedFile = {
+  id: number;
+  file_name: string;
+  content_type: string;
+  file_size_bytes: number;
+  is_image: boolean;
+  download_url?: string | null;
+  preview_url?: string | null;
+  created_at?: string;
+};
+
+export type ProjectEvidence = {
+  id: number;
+  evidence_type: string;
+  evidence_role: string;
+  file_name?: string | null;
+  description?: string | null;
+  resource_url?: string | null;
+  uploaded_file_id?: number | null;
+  uploaded_file?: ProjectUploadedFile | null;
+  verification_status?: string;
+  created_at?: string;
 };
 
 export type ProjectOverview = {
@@ -149,6 +173,7 @@ export type ProjectWorkItemSummary = {
     name: string;
     profile_image_url?: string;
   }[];
+  attachments?: ProjectUploadedFile[];
 };
 
 export type ProjectWorkItemDependency = {
@@ -311,6 +336,7 @@ export type CreateProjectWorkItemPayload = {
   gantt_sort_order?: number;
   timeline_start_date: string;
   timeline_end_date: string;
+  attachment_file_ids?: number[];
 };
 
 export type UpdateProjectWorkItemPayload = Partial<CreateProjectWorkItemPayload>;

@@ -21,8 +21,10 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { Overlay } from "../../components/Overlay";
 import { fetchProjectWorkItems, updateProjectWorkItem, deleteProjectWorkItem } from "./api";
 import type { ProjectDetail, ProjectWorkItemSummary } from "./types";
+import { AttachmentList } from "./ProjectFileAttachments";
 import { ProjectTaskCreateOverlay } from "./ProjectTaskCreateOverlay";
 import { ProjectTaskEditOverlay } from "./ProjectTaskEditOverlay";
 import { ActivityLogOverlay } from "./ActivityLogOverlay";
@@ -54,6 +56,7 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project, onR
   const [loading, setLoading] = useState(true);
   const [createStatus, setCreateStatus] = useState<TaskStatus | null>(null);
   const [editingTask, setEditingTask] = useState<ProjectWorkItemSummary | null>(null);
+  const [attachmentTask, setAttachmentTask] = useState<ProjectWorkItemSummary | null>(null);
   const [pendingDoneTask, setPendingDoneTask] = useState<{
     task: ProjectWorkItemSummary;
     originalStatus: TaskStatus;
@@ -289,7 +292,12 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project, onR
 
   const renderSortableItem = (item: ProjectWorkItemSummary) => {
     return (
-      <SortableTaskCard key={item.id} item={item} onContextMenu={handleContextMenu} />
+      <SortableTaskCard
+        key={item.id}
+        item={item}
+        onContextMenu={handleContextMenu}
+        onOpenAttachments={setAttachmentTask}
+      />
     );
   };
 
@@ -367,6 +375,7 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project, onR
               title={STATUS_LABELS[status]}
               items={getFilteredItems(status)}
               onContextMenu={handleContextMenu}
+              onOpenAttachments={setAttachmentTask}
             />
           ))}
           <DragOverlay
@@ -399,6 +408,15 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project, onR
           >
             진행(활동) 상황 기록
           </button> */}
+          <button
+            disabled={!contextMenu.task.attachments || contextMenu.task.attachments.length === 0}
+            onClick={() => {
+              setAttachmentTask(contextMenu.task);
+              setContextMenu(null);
+            }}
+          >
+            첨부 보기
+          </button>
           <button
             onClick={() => {
               setEditingTask(contextMenu.task);
@@ -434,6 +452,15 @@ export const ProjectTasksPage: React.FC<ProjectTasksPageProps> = ({ project, onR
         task={editingTask}
         onUpdated={handleEditTask}
       />
+
+      <Overlay
+        open={attachmentTask !== null}
+        onClose={() => setAttachmentTask(null)}
+        title={attachmentTask ? `${attachmentTask.title} 첨부 결과물` : "첨부 결과물"}
+        description="이 할일에 첨부된 파일과 이미지를 확인합니다."
+      >
+        <AttachmentList files={attachmentTask?.attachments ?? []} />
+      </Overlay>
 
       {pendingDoneTask && (
         <TaskReopenOverlay
@@ -477,9 +504,10 @@ type KanbanColumnProps = {
   title: string;
   items: ProjectWorkItemSummary[];
   onContextMenu: (e: React.MouseEvent, task: ProjectWorkItemSummary) => void;
+  onOpenAttachments: (task: ProjectWorkItemSummary) => void;
 };
 
-function KanbanColumn({ id, title, items, onContextMenu }: KanbanColumnProps) {
+function KanbanColumn({ id, title, items, onContextMenu, onOpenAttachments }: KanbanColumnProps) {
   const { setNodeRef } = useDroppable({ id });
 
   return (
@@ -493,7 +521,12 @@ function KanbanColumn({ id, title, items, onContextMenu }: KanbanColumnProps) {
         <SortableContext id={id} items={items} strategy={verticalListSortingStrategy}>
           <div className="p-tasks-sortable-list">
             {items.map((item) => (
-              <SortableTaskCard key={item.id} item={item} onContextMenu={onContextMenu} />
+              <SortableTaskCard
+                key={item.id}
+                item={item}
+                onContextMenu={onContextMenu}
+                onOpenAttachments={onOpenAttachments}
+              />
             ))}
           </div>
         </SortableContext>
@@ -506,9 +539,11 @@ function KanbanColumn({ id, title, items, onContextMenu }: KanbanColumnProps) {
 function SortableTaskCard({
   item,
   onContextMenu,
+  onOpenAttachments,
 }: {
   item: ProjectWorkItemSummary;
   onContextMenu: (e: React.MouseEvent, task: ProjectWorkItemSummary) => void;
+  onOpenAttachments: (task: ProjectWorkItemSummary) => void;
 }) {
   const {
     attributes,
@@ -527,7 +562,8 @@ function SortableTaskCard({
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>      <TaskCard item={item} onContextMenu={onContextMenu} />
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <TaskCard item={item} onContextMenu={onContextMenu} onOpenAttachments={onOpenAttachments} />
     </div>
   );
 }
@@ -536,11 +572,14 @@ function TaskCard({
   item,
   isDragging,
   onContextMenu,
+  onOpenAttachments,
 }: {
   item: ProjectWorkItemSummary;
   isDragging?: boolean;
   onContextMenu?: (e: React.MouseEvent, task: ProjectWorkItemSummary) => void;
+  onOpenAttachments?: (task: ProjectWorkItemSummary) => void;
 }) {
+  const attachmentCount = item.attachments?.length ?? 0;
   return (
     <div
       className={`p-task-card ${isDragging ? "is-dragging" : ""}`}
@@ -557,6 +596,19 @@ function TaskCard({
           <span>📅 {item.timeline_start_date} ~ {item.timeline_end_date}</span>
         </div>
       )}
+      {attachmentCount > 0 ? (
+        <button
+          type="button"
+          className="p-task-attachment-button"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenAttachments?.(item);
+          }}
+        >
+          첨부 {attachmentCount}
+        </button>
+      ) : null}
       <div className="p-task-card-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "8px" }}>
         <div className="p-task-priority" style={{ paddingBottom: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
           {item.priority === "HIGH" && (

@@ -17,6 +17,7 @@ import type {
   ProjectMembership,
   ProjectWorkItemListResponse,
   ProjectMemberSummary,
+  ProjectUploadedFile,
   UpdateProjectWorkItemHierarchyPayload,
   UpdateProjectPayload,
   UpdateProjectWorkItemPayload,
@@ -60,6 +61,55 @@ export function fetchProjectActivities(
 ): Promise<ProjectActivityListResponse> {
   return apiRequest<ProjectActivityListResponse>(
     `/api/projects/${projectId}/activities${toQueryString(filters)}`,
+  );
+}
+
+export type PrepareProjectUploadRequest = {
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+};
+
+export type PreparedProjectUpload = ProjectUploadedFile & {
+  upload_url: string;
+  s3_object_key: string;
+};
+
+export function prepareProjectUploads(
+  projectId: number,
+  files: PrepareProjectUploadRequest[],
+): Promise<{ items: PreparedProjectUpload[]; max_total_bytes: number }> {
+  return apiJsonRequest<{ items: PreparedProjectUpload[]; max_total_bytes: number }>(
+    `/api/projects/${projectId}/uploads/presign`,
+    "POST",
+    { files },
+  );
+}
+
+export async function uploadPreparedFile(
+  upload: PreparedProjectUpload,
+  file: File,
+): Promise<void> {
+  const response = await fetch(upload.upload_url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": upload.content_type,
+    },
+    body: file,
+  });
+
+  if (!response.ok) {
+    throw new Error(`${file.name} 업로드에 실패했습니다.`);
+  }
+}
+
+export function deleteProjectUpload(
+  projectId: number,
+  fileId: number,
+): Promise<{ message: string; file_id: number }> {
+  return apiRequest<{ message: string; file_id: number }>(
+    `/api/projects/${projectId}/uploads/${fileId}`,
+    { method: "DELETE" },
   );
 }
 

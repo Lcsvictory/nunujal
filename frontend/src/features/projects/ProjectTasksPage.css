@@ -143,6 +143,18 @@
   word-break: break-word;
 }
 
+.p-task-attachment-button {
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 0 10px;
+  align-self: flex-start;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 12px;
+  font-weight: 800;
+  border: 1px solid #c7d2fe;
+}
+
 .p-task-card-footer {
   display: flex;
   justify-content: space-between;

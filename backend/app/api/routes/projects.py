@@ -13,6 +13,15 @@ import app.models as models
 from app.core.config import get_settings
 from app.core.security import get_authenticated_user, get_authenticated_user_from_token
 from app.database import get_session
+from app.services.upload_files import (
+    build_s3_object_key,
+    create_presigned_download_url,
+    create_presigned_upload_url,
+    delete_s3_object,
+    get_s3_object_size,
+    is_image_content_type,
+    safe_file_name,
+)
 
 router = APIRouter()
 settings = get_settings()
@@ -61,6 +70,7 @@ class CreateWorkItemRequest(BaseModel):
     gantt_sort_order: int | None = None
     timeline_start_date: date
     timeline_end_date: date
+    attachment_file_ids: list[int] = []
 
 
 class UpdateWorkItemRequest(BaseModel):
@@ -73,6 +83,7 @@ class UpdateWorkItemRequest(BaseModel):
     gantt_sort_order: int | None = None
     timeline_start_date: date | None = None
     timeline_end_date: date | None = None
+    attachment_file_ids: list[int] | None = None
 
 
 class CreateWorkItemDependencyRequest(BaseModel):
@@ -89,12 +100,14 @@ class WorkItemHierarchyEntryRequest(BaseModel):
 class UpdateWorkItemHierarchyRequest(BaseModel):
     items: list[WorkItemHierarchyEntryRequest]
 
+
 class EvidenceCreateRequest(BaseModel):
     evidence_type: str
     evidence_role: str = "SUPPORTING"
     description: str | None = None
     resource_url: str | None = None
     file_name: str | None = None
+    uploaded_file_id: int | None = None
 
 class ActivityCreateRequest(BaseModel):
     work_item_ids: list[int] = []
@@ -108,23 +121,14 @@ class ActivityCreateRequest(BaseModel):
     evidences: list[EvidenceCreateRequest] = []
 
 
-class EvidenceCreateRequest(BaseModel):
-    evidence_type: str
-    evidence_role: str = "SUPPORTING"
-    description: str | None = None
-    resource_url: str | None = None
-    file_name: str | None = None
+class UploadPrepareFileRequest(BaseModel):
+    file_name: str
+    content_type: str = "application/octet-stream"
+    size_bytes: int
 
-class ActivityCreateRequest(BaseModel):
-    work_item_ids: list[int] = []
-    target_task_status: str | None = None
-    category: str = "BASIC"
-    activity_type: str = "FINALIZATION"
-    contribution_phase: str = "FINALIZATION"
-    title: str
-    content: str
-    target_user_id: int | None = None
-    evidences: list[EvidenceCreateRequest] = []
+
+class UploadPrepareRequest(BaseModel):
+    files: list[UploadPrepareFileRequest]
 
 class ProjectWorkItemConnectionManager:
     def __init__(self) -> None:
@@ -301,6 +305,79 @@ def _require_project_access(
     return project, membership
 
 
+def _serialize_uploaded_file(uploaded_file: models.UploadedFile | None) -> dict[str, object] | None:
+    if uploaded_file is None:
+        return None
+
+    is_image = is_image_content_type(uploaded_file.content_type)
+    download_url: str | None = None
+    preview_url: str | None = None
+    try:
+        download_url = create_presigned_download_url(
+            settings,
+            object_key=uploaded_file.s3_object_key,
+            file_name=uploaded_file.original_file_name,
+            as_attachment=True,
+        )
+        if is_image:
+            preview_url = create_presigned_download_url(
+                settings,
+                object_key=uploaded_file.s3_object_key,
+                file_name=uploaded_file.original_file_name,
+                as_attachment=False,
+            )
+    except Exception:
+        download_url = None
+        preview_url = None
+
+    return {
+        "id": uploaded_file.id,
+        "file_name": uploaded_file.original_file_name,
+        "content_type": uploaded_file.content_type,
+        "file_size_bytes": uploaded_file.file_size_bytes,
+        "is_image": is_image,
+        "download_url": download_url,
+        "preview_url": preview_url,
+        "created_at": uploaded_file.created_at.isoformat(),
+    }
+
+
+def _resolve_uploaded_files(
+    session: Session,
+    project_id: int,
+    file_ids: list[int],
+    user_id: int | None = None,
+) -> list[models.UploadedFile]:
+    unique_file_ids = list(dict.fromkeys(file_ids))
+    if not unique_file_ids:
+        return []
+
+    query = session.query(models.UploadedFile).filter(
+        models.UploadedFile.project_id == project_id,
+        models.UploadedFile.id.in_(unique_file_ids),
+    )
+    if user_id is not None:
+        query = query.filter(models.UploadedFile.uploaded_by_user_id == user_id)
+    uploaded_files = query.all()
+    uploaded_file_by_id = {uploaded_file.id: uploaded_file for uploaded_file in uploaded_files}
+    if len(uploaded_file_by_id) != len(unique_file_ids):
+        raise HTTPException(status_code=400, detail="One or more uploaded files were not found.")
+
+    total_size = sum(uploaded_file.file_size_bytes for uploaded_file in uploaded_files)
+    if total_size > settings.max_upload_total_bytes:
+        raise HTTPException(status_code=400, detail="Total attachment size cannot exceed 50MB.")
+
+    for uploaded_file in uploaded_files:
+        try:
+            actual_size = get_s3_object_size(settings, object_key=uploaded_file.s3_object_key)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Uploaded file is not available: {uploaded_file.original_file_name}") from exc
+        if actual_size != uploaded_file.file_size_bytes:
+            raise HTTPException(status_code=400, detail=f"Uploaded file size does not match: {uploaded_file.original_file_name}")
+
+    return [uploaded_file_by_id[file_id] for file_id in unique_file_ids]
+
+
 def _serialize_work_item_dependency(
     dependency: models.WorkItemDependency,
 ) -> dict[str, object]:
@@ -370,6 +447,8 @@ def _serialize_activity(activity: models.Activity) -> dict[str, object]:
                 "file_name": evidence.file_name,
                 "description": evidence.description,
                 "resource_url": evidence.resource_url,
+                "uploaded_file_id": evidence.uploaded_file_id,
+                "uploaded_file": _serialize_uploaded_file(evidence.uploaded_file),
                 "verification_status": evidence.verification_status,
                 "created_at": evidence.created_at.isoformat(),
             }
@@ -434,6 +513,11 @@ def _serialize_project_work_item(work_item: models.WorkItem) -> dict[str, object
         if assignee
         else None,
         "contributors": list(contributors_dict.values()),
+        "attachments": [
+            _serialize_uploaded_file(attachment.uploaded_file)
+            for attachment in getattr(work_item, "attachments", [])
+            if attachment.uploaded_file is not None
+        ],
     }
 
 
@@ -445,6 +529,9 @@ def _build_project_work_item_snapshot(
         session.query(models.WorkItem)
         .options(
             selectinload(models.WorkItem.activities).selectinload(models.Activity.actor_user)
+        )
+        .options(
+            selectinload(models.WorkItem.attachments).selectinload(models.WorkItemAttachment.uploaded_file)
         )
         .filter(models.WorkItem.project_id == project_id, models.WorkItem.deleted_at == None)
         .order_by(
@@ -811,6 +898,122 @@ def create_project(
         session.close()
 
 
+@router.post("/{project_id}/uploads/presign", summary="Create S3 presigned upload URLs")
+def create_project_upload_presigned_urls(
+    project_id: int,
+    payload: UploadPrepareRequest,
+    request: FastAPIRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    session = get_session()
+    try:
+        current_user = get_authenticated_user(session, request, authorization)
+        project, _membership = _require_project_access(session, project_id, current_user.id)
+
+        if not payload.files:
+            raise HTTPException(status_code=400, detail="At least one file is required.")
+
+        total_size = sum(file.size_bytes for file in payload.files)
+        if total_size > settings.max_upload_total_bytes:
+            raise HTTPException(status_code=400, detail="Total upload size cannot exceed 50MB.")
+
+        items: list[dict[str, object]] = []
+        for file in payload.files:
+            file_name = safe_file_name(file.file_name)
+            content_type = file.content_type.strip() or "application/octet-stream"
+            if file.size_bytes <= 0:
+                raise HTTPException(status_code=400, detail=f"Invalid file size: {file_name}")
+
+            object_key = build_s3_object_key(project.id, file_name, settings.s3_upload_prefix)
+            upload_url = create_presigned_upload_url(
+                settings,
+                object_key=object_key,
+                content_type=content_type,
+            )
+            uploaded_file = models.UploadedFile(
+                project_id=project.id,
+                uploaded_by_user_id=current_user.id,
+                original_file_name=file_name,
+                content_type=content_type,
+                file_size_bytes=file.size_bytes,
+                s3_bucket=settings.s3_bucket_name or "",
+                s3_object_key=object_key,
+            )
+            session.add(uploaded_file)
+            session.flush()
+
+            items.append({
+                "id": uploaded_file.id,
+                "file_name": uploaded_file.original_file_name,
+                "content_type": uploaded_file.content_type,
+                "file_size_bytes": uploaded_file.file_size_bytes,
+                "is_image": is_image_content_type(uploaded_file.content_type),
+                "s3_object_key": uploaded_file.s3_object_key,
+                "upload_url": upload_url,
+            })
+
+        session.commit()
+        return {
+            "items": items,
+            "max_total_bytes": settings.max_upload_total_bytes,
+        }
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+@router.delete("/{project_id}/uploads/{file_id}", summary="Delete an unlinked uploaded file")
+def delete_project_uploaded_file(
+    project_id: int,
+    file_id: int,
+    request: FastAPIRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    session = get_session()
+    try:
+        current_user = get_authenticated_user(session, request, authorization)
+        project, _membership = _require_project_access(session, project_id, current_user.id)
+        uploaded_file = (
+            session.query(models.UploadedFile)
+            .filter(
+                models.UploadedFile.id == file_id,
+                models.UploadedFile.project_id == project.id,
+                models.UploadedFile.uploaded_by_user_id == current_user.id,
+            )
+            .first()
+        )
+        if uploaded_file is None:
+            raise HTTPException(status_code=404, detail="Uploaded file not found.")
+
+        object_key = uploaded_file.s3_object_key
+        deleted_work_item_attachment_count = (
+            session.query(models.WorkItemAttachment)
+            .filter(models.WorkItemAttachment.uploaded_file_id == uploaded_file.id)
+            .delete(synchronize_session=False)
+        )
+        deleted_evidence_count = (
+            session.query(models.Evidence)
+            .filter(models.Evidence.uploaded_file_id == uploaded_file.id)
+            .delete(synchronize_session=False)
+        )
+        delete_s3_object(settings, object_key=object_key)
+        session.delete(uploaded_file)
+        session.commit()
+
+        return {
+            "message": "Uploaded file deleted.",
+            "file_id": file_id,
+            "deleted_reference_count": deleted_work_item_attachment_count + deleted_evidence_count,
+        }
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
 @router.get("/{project_id}/work-items", summary="List project work items")
 def list_project_work_items(
     project_id: int,
@@ -888,6 +1091,17 @@ def create_project_work_item(
             payload.timeline_end_date,
             status=status_value,
         )
+        attachment_files = _resolve_uploaded_files(
+            session,
+            project.id,
+            payload.attachment_file_ids,
+            user_id=current_user.id,
+        )
+        for uploaded_file in attachment_files:
+            session.add(models.WorkItemAttachment(
+                work_item_id=work_item.id,
+                uploaded_file_id=uploaded_file.id,
+            ))
         
         activity = models.Activity(
             project_id=project.id,
@@ -974,6 +1188,21 @@ def update_project_work_item(
             if payload.gantt_sort_order < 0:
                 raise HTTPException(status_code=400, detail="Hierarchy sort order cannot be negative.")
             work_item.gantt_sort_order = payload.gantt_sort_order
+
+        if "attachment_file_ids" in changed_fields and payload.attachment_file_ids is not None:
+            attachment_files = _resolve_uploaded_files(
+                session,
+                project_id,
+                payload.attachment_file_ids,
+            )
+            session.query(models.WorkItemAttachment).filter(
+                models.WorkItemAttachment.work_item_id == work_item.id
+            ).delete(synchronize_session=False)
+            for uploaded_file in attachment_files:
+                session.add(models.WorkItemAttachment(
+                    work_item_id=work_item.id,
+                    uploaded_file_id=uploaded_file.id,
+                ))
 
         current_timeline_start, current_timeline_end = _get_work_item_timeline_dates(work_item)
         next_timeline_start = payload.timeline_start_date or current_timeline_start
@@ -1350,7 +1579,7 @@ def get_project(
         recent_activities = (
             session.query(models.Activity)
             .options(joinedload(models.Activity.work_items).joinedload(models.WorkItem.assignee_user))
-            .options(joinedload(models.Activity.evidence_items))
+            .options(joinedload(models.Activity.evidence_items).joinedload(models.Evidence.uploaded_file))
             .options(joinedload(models.Activity.reactions))
             .options(joinedload(models.Activity.actor_user))
             .options(joinedload(models.Activity.target_user))
@@ -1795,7 +2024,7 @@ def list_project_activities(
         query = (
             session.query(models.Activity)
             .options(joinedload(models.Activity.work_items).joinedload(models.WorkItem.assignee_user))
-            .options(joinedload(models.Activity.evidence_items))
+            .options(joinedload(models.Activity.evidence_items).joinedload(models.Evidence.uploaded_file))
             .options(joinedload(models.Activity.reactions))
             .options(joinedload(models.Activity.actor_user))
             .options(joinedload(models.Activity.target_user))
@@ -2012,18 +2241,31 @@ def create_activity(
         session.add(new_activity)
         session.flush()
 
+        evidence_file_ids = [
+            ev_req.uploaded_file_id
+            for ev_req in payload.evidences
+            if ev_req.uploaded_file_id is not None
+        ]
+        evidence_files = _resolve_uploaded_files(session, project_id, evidence_file_ids, user_id=user_id)
+        evidence_file_by_id = {uploaded_file.id: uploaded_file for uploaded_file in evidence_files}
+
         for ev_req in payload.evidences:
             if ev_req.evidence_type in ("LINK", "FILE") and (not ev_req.description or len(ev_req.description.strip()) < 10):
                  # enforcing logic but loosely for now
                  pass
+            uploaded_file = evidence_file_by_id.get(ev_req.uploaded_file_id)
+            evidence_type = ev_req.evidence_type
+            if uploaded_file is not None:
+                evidence_type = "IMAGE" if is_image_content_type(uploaded_file.content_type) else "FILE"
             new_ev = models.Evidence(
                 activity_id=new_activity.id,
                 uploaded_by_user_id=user_id,
-                evidence_type=ev_req.evidence_type,
+                uploaded_file_id=uploaded_file.id if uploaded_file is not None else None,
+                evidence_type=evidence_type,
                 evidence_role=ev_req.evidence_role,
                 description=ev_req.description,
                 resource_url=ev_req.resource_url,
-                file_name=ev_req.file_name,
+                file_name=ev_req.file_name or (uploaded_file.original_file_name if uploaded_file is not None else None),
                 captured_at=now
             )
             session.add(new_ev)
@@ -2125,13 +2367,27 @@ def update_activity(
             
         if "evidences" in payload:
             session.query(models.Evidence).filter(models.Evidence.activity_id == activity.id).delete(synchronize_session=False)
+            evidence_file_ids = [
+                int(ev_data["uploaded_file_id"])
+                for ev_data in payload["evidences"]
+                if ev_data.get("uploaded_file_id") is not None
+            ]
+            evidence_files = _resolve_uploaded_files(session, project_id, evidence_file_ids, user_id=user_id)
+            evidence_file_by_id = {uploaded_file.id: uploaded_file for uploaded_file in evidence_files}
             for ev_data in payload["evidences"]:
+                uploaded_file_id = ev_data.get("uploaded_file_id")
+                uploaded_file = evidence_file_by_id.get(int(uploaded_file_id)) if uploaded_file_id is not None else None
+                evidence_type = ev_data.get("evidence_type", "TEXT")
+                if uploaded_file is not None:
+                    evidence_type = "IMAGE" if is_image_content_type(uploaded_file.content_type) else "FILE"
                 session.add(models.Evidence(
                     activity_id=activity.id,
                     uploaded_by_user_id=user_id,
-                    evidence_type=ev_data.get("evidence_type", "TEXT"),
+                    uploaded_file_id=uploaded_file.id if uploaded_file is not None else None,
+                    evidence_type=evidence_type,
                     description=ev_data.get("description"),
                     resource_url=ev_data.get("resource_url"),
+                    file_name=ev_data.get("file_name") or (uploaded_file.original_file_name if uploaded_file is not None else None),
                     evidence_role=ev_data.get("evidence_role", "SUPPORTING"),
                     verification_status="SELF_SUBMITTED",
                     captured_at=datetime.now()

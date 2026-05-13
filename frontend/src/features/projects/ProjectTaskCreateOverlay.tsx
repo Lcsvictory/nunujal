@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ApiError } from "../../lib/api";
 import { Overlay } from "../../components/Overlay";
 import { createProjectWorkItem, fetchProjectMembers } from "./api";
-import type { CreateProjectWorkItemPayload, ProjectMemberSummary } from "./types";
+import { FileUploadPicker } from "./ProjectFileAttachments";
+import type { CreateProjectWorkItemPayload, ProjectMemberSummary, ProjectUploadedFile } from "./types";
 
 type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE";
 
@@ -32,6 +33,7 @@ export function ProjectTaskCreateOverlay({
   });
   
   const [members, setMembers] = useState<ProjectMemberSummary[]>([]);
+  const [attachments, setAttachments] = useState<ProjectUploadedFile[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -50,6 +52,7 @@ export function ProjectTaskCreateOverlay({
         timeline_start_date: now.toISOString().split("T")[0],
         timeline_end_date: end.toISOString().split("T")[0],
       });
+      setAttachments([]);
       setIsSubmitting(false);
       setErrorMessage(null);
       
@@ -82,6 +85,7 @@ export function ProjectTaskCreateOverlay({
         ...formState,
         title: formState.title.trim(),
         description: formState.description.trim(),
+        attachment_file_ids: attachments.map((file) => file.id),
       });
       onClose();
       await onCreated();
@@ -191,6 +195,16 @@ export function ProjectTaskCreateOverlay({
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="field">
+          <span>첨부 결과물</span>
+          <FileUploadPicker
+            projectId={projectId}
+            value={attachments}
+            onChange={setAttachments}
+            disabled={isSubmitting}
+          />
         </label>
 
         {errorMessage ? <p className="form-feedback form-feedback-error">{errorMessage}</p> : null}
