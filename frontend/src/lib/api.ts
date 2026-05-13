@@ -1,4 +1,14 @@
+import { navigate } from "./router";
+
 const backendBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8028";
+const refreshPath = "/api/auth/refresh";
+
+type ApiRequestInit = RequestInit & {
+  skipAuthRefresh?: boolean;
+  skipErrorRedirect?: boolean;
+};
+
+let refreshPromise: Promise<boolean> | null = null;
 
 export function getApiBaseUrl(): string {
   return backendBaseUrl;
@@ -43,31 +53,101 @@ function getErrorMessage(payload: unknown): string {
   return "요청을 처리하지 못했습니다.";
 }
 
-export async function apiRequest<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const headers = new Headers(init.headers);
-  const response = await fetch(`${backendBaseUrl}${path}`, {
-    credentials: "include",
-    ...init,
-    headers,
-  });
-
+async function parseResponsePayload(response: Response): Promise<unknown> {
   const contentType = response.headers.get("content-type") ?? "";
-  let payload: unknown = null;
 
   if (contentType.includes("application/json")) {
-    payload = await response.json();
-  } else {
-    payload = await response.text();
+    return response.json();
   }
 
-  if (!response.ok) {
-    throw new ApiError(response.status, getErrorMessage(payload), payload);
+  return response.text();
+}
+
+function moveToErrorPage(code: string, message: string): void {
+  const params = new URLSearchParams({ code, message });
+  if (window.location.pathname === "/error" && window.location.search === `?${params.toString()}`) {
+    return;
+  }
+  navigate(`/error?${params.toString()}`);
+}
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = fetch(`${backendBaseUrl}${refreshPath}`, {
+      method: "POST",
+      credentials: "include",
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null;
+      });
   }
 
-  return payload as T;
+  return refreshPromise;
+}
+
+export async function apiRequest<T>(
+  path: string,
+  init: ApiRequestInit = {},
+): Promise<T> {
+  const {
+    skipAuthRefresh = false,
+    skipErrorRedirect = false,
+    ...requestInit
+  } = init;
+  const headers = new Headers(requestInit.headers);
+
+  try {
+    const response = await fetch(`${backendBaseUrl}${path}`, {
+      credentials: "include",
+      ...requestInit,
+      headers,
+    });
+    const payload = await parseResponsePayload(response);
+
+    if (!response.ok) {
+      if (response.status === 401 && !skipAuthRefresh && path !== refreshPath) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+          return apiRequest<T>(path, {
+            ...requestInit,
+            skipAuthRefresh: true,
+            skipErrorRedirect,
+          });
+        }
+
+        if (!skipErrorRedirect) {
+          moveToErrorPage(
+            "401",
+            "세션이 만료되었거나 다른 기기에서 로그인되어 로그아웃되었습니다.",
+          );
+        }
+      } else if (response.status >= 500 && !skipErrorRedirect) {
+        moveToErrorPage(
+          String(response.status),
+          "서버에서 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        );
+      }
+
+      throw new ApiError(response.status, getErrorMessage(payload), payload);
+    }
+
+    return payload as T;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    if (!skipErrorRedirect) {
+      moveToErrorPage(
+        "network",
+        "서버에 연결하지 못했습니다. 네트워크 또는 서버 상태를 확인해 주세요.",
+      );
+    }
+
+    throw error;
+  }
 }
 
 export function apiJsonRequest<T>(

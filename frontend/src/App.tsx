@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ErrorPage } from "./features/auth/ErrorPage";
 import { LandingPage } from "./features/auth/LandingPage";
 import { LoginPage } from "./features/auth/LoginPage";
 import { MyPage } from "./features/auth/MyPage";
@@ -24,6 +25,10 @@ export default function App() {
 
   if (screen === "login") {
     return <LoginPage params={params} />;
+  }
+
+  if (screen === "error") {
+    return <ErrorPage params={params} />;
   }
 
   if (screen === "projects") {

@@ -30,27 +30,57 @@ ACCESS_TOKEN_COOKIE = "access_token"
 REFRESH_TOKEN_COOKIE = "refresh_token"
 
 
-def _frontend_redirect_url(path: str, *, auth: str | None = None, message: str | None = None) -> str:
+def _frontend_redirect_url(
+    path: str,
+    *,
+    auth: str | None = None,
+    message: str | None = None,
+    frontend_url: str | None = None,
+) -> str:
     query_params: dict[str, str] = {}
     if auth:
         query_params["auth"] = auth
     if message:
         query_params["message"] = message
 
-    base_url = f"{settings.frontend_url.rstrip('/')}{path}"
+    base_url = f"{(frontend_url or settings.frontend_url).rstrip('/')}{path}"
     if not query_params:
         return base_url
 
     return f"{base_url}?{urlencode(query_params, quote_via=quote)}"
 
 
-def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+def _is_localhost(host: str) -> bool:
+    normalized_host = host.split(":", 1)[0].lower()
+    return normalized_host in {"localhost", "127.0.0.1", "0.0.0.0"} or normalized_host.endswith(".localhost")
+
+
+def _should_use_cross_site_cookie(request: FastAPIRequest) -> bool:
+    host = request.headers.get("x-forwarded-host") or request.url.hostname or ""
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    return proto == "https" and not _is_localhost(host)
+
+
+def _is_local_frontend_origin(request: FastAPIRequest) -> bool:
+    origin = request.headers.get("origin")
+    return bool(origin and origin.rstrip("/") == settings.local_frontend_url.rstrip("/"))
+
+
+def _set_auth_cookies(
+    response: Response,
+    access_token: str,
+    refresh_token: str,
+    *,
+    cross_site: bool = False,
+) -> None:
+    same_site = "none" if cross_site else "lax"
+    secure = cross_site
     response.set_cookie(
         key=ACCESS_TOKEN_COOKIE,
         value=access_token,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=secure,
+        samesite=same_site,
         max_age=settings.access_token_expire_minutes * 60,
         path="/",
     )
@@ -58,8 +88,8 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         key=REFRESH_TOKEN_COOKIE,
         value=refresh_token,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=secure,
+        samesite=same_site,
         max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
         path="/",
     )
@@ -358,12 +388,28 @@ def login_as_dummy_member(request: FastAPIRequest) -> RedirectResponse:
     return for_test_token_cookie_return("dummy_google_member_001", request)
 
 
+@router.get("/logined-local-{user_name}", summary="For testing: log in as a user by name and redirect to local frontend")
+def login_as_dummy_user_by_name_local(user_name: str, request: FastAPIRequest) -> RedirectResponse:
+    return for_test_token_cookie_return_by_name(
+        user_name,
+        request,
+        frontend_url=settings.local_frontend_url,
+        cross_site_cookie=_should_use_cross_site_cookie(request),
+    )
+
+
 @router.get("/logined-{user_name}", summary="For testing: log in as a user by name without Google OAuth")
 def login_as_dummy_user_by_name(user_name: str, request: FastAPIRequest) -> RedirectResponse:
     return for_test_token_cookie_return_by_name(user_name, request)
 
 
-def for_test_token_cookie_return(id: str, request: FastAPIRequest) -> RedirectResponse:
+def for_test_token_cookie_return(
+    id: str,
+    request: FastAPIRequest,
+    *,
+    frontend_url: str | None = None,
+    cross_site_cookie: bool = False,
+) -> RedirectResponse:
     session = get_session()
     try:
         user = session.query(models.AppUser).filter(models.AppUser.provider_user_id == id).first()
@@ -390,14 +436,21 @@ def for_test_token_cookie_return(id: str, request: FastAPIRequest) -> RedirectRe
             "/projects",
             auth="success",
             message="Login successful",
+            frontend_url=frontend_url,
         ),
         status_code=302,
     )
-    _set_auth_cookies(response, access_token, refresh_token)
+    _set_auth_cookies(response, access_token, refresh_token, cross_site=cross_site_cookie)
     return response
 
 
-def for_test_token_cookie_return_by_name(user_name: str, request: FastAPIRequest) -> RedirectResponse:
+def for_test_token_cookie_return_by_name(
+    user_name: str,
+    request: FastAPIRequest,
+    *,
+    frontend_url: str | None = None,
+    cross_site_cookie: bool = False,
+) -> RedirectResponse:
     normalized_name = user_name.strip()
     if not normalized_name:
         raise HTTPException(status_code=400, detail="User name is required.")
@@ -438,10 +491,11 @@ def for_test_token_cookie_return_by_name(user_name: str, request: FastAPIRequest
             "/projects",
             auth="success",
             message="Login successful",
+            frontend_url=frontend_url,
         ),
         status_code=302,
     )
-    _set_auth_cookies(response, access_token, refresh_token)
+    _set_auth_cookies(response, access_token, refresh_token, cross_site=cross_site_cookie)
     return response
 
 
@@ -486,7 +540,12 @@ def refresh_current_session(request: FastAPIRequest) -> JSONResponse:
         access_token = create_jwt_token(user, auth_session)
 
         response = JSONResponse({"ok": True, "user": _serialize_user(user)})
-        _set_auth_cookies(response, access_token, new_refresh_token)
+        _set_auth_cookies(
+            response,
+            access_token,
+            new_refresh_token,
+            cross_site=_is_local_frontend_origin(request) and _should_use_cross_site_cookie(request),
+        )
         return response
     except HTTPException as exc:
         session.rollback()

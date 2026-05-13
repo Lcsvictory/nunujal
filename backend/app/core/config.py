@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     app_name: str = "NunuJal API"
     app_env: str = "development"
     frontend_url: str = "https://nunujal.o-r.kr"
+    local_frontend_url: str = "http://localhost:5073"
     server_port: int = 8028
     google_redirect_uri: str = "https://nunujal.o-r.kr/api/auth/google/callback"
     jwt_secret: str
@@ -22,6 +23,13 @@ class Settings(BaseSettings):
     contribution_prompt_version: str = "v1"
     contribution_policy_version: str = "v1"
     contribution_request_timeout_seconds: int = 600
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    aws_region: str = "ap-northeast-2"
+    s3_bucket_name: str | None = None
+    s3_upload_prefix: str = "uploads"
+    s3_presigned_expire_seconds: int = 300
+    max_upload_total_bytes: int = 50 * 1024 * 1024
 
     model_config = SettingsConfigDict(
         env_file=".env", 
