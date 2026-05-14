@@ -317,10 +317,12 @@ export function ProjectOverviewPage({
             {project.overview.recent_activities.length > 0 ? (
               <div className="activity-list">
                 {project.overview.recent_activities.map((activity) => (
-                  <article key={activity.id} className="activity-item">
+                  <article key={activity.id} className="activity-item" style={{ position: 'relative' }}>
                     <div className="activity-copy">
                       <div className="activity-topline">
                         <strong>{activity.title}</strong>
+                      </div>
+                      <div style={{ position: 'absolute', top: '20px', right: '20px', display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <span className="meta-chip">
                           {formatReviewState(activity.review_state)}
                         </span>
@@ -329,7 +331,7 @@ export function ProjectOverviewPage({
                          activity.target_user?.id === currentUserId && (
                           <button 
                             type="button" 
-                            style={{ padding: "2px 8px", fontSize: "12px", background: "#10b981", color: "white", borderRadius: "4px", border: "none", cursor: "pointer", marginLeft: "10px" }}
+                            style={{ padding: "2px 8px", fontSize: "12px", background: "#10b981", color: "white", borderRadius: "4px", border: "none", cursor: "pointer" }}
                             onClick={async () => {
                               try {
                                 await apiJsonRequest(`/api/projects/${project.id}/activities/${activity.id}/approve`, "POST", {});
@@ -347,7 +349,7 @@ export function ProjectOverviewPage({
                       <div className="activity-meta">
                         <span style={{ fontWeight: 'bold' }}>{activity.actor.name}</span>
                         {activity.activity_category === 'PEER_SUPPORT' && activity.target_user && (
-                            <span>➔ <strong style={{ color: '#0066ff' }}>{activity.target_user.name}</strong> 지원</span>
+                            <span>➔ <span style={{ color: '#0066ff' }}>{activity.target_user.name}</span> 지원</span>
                         )}
                         <span>{formatActivityType(activity.activity_type)}</span>
                         <span>{formatDateTime(activity.occurred_at)}</span>
