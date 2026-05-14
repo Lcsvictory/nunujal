@@ -680,11 +680,9 @@ export function ProjectGanttChart({
 
       try {
         const payload = JSON.parse(event.data) as { type?: string };
-        if (payload.type === "work_items_changed" || payload.type === "work_items_connected") {
+        if (payload.type === "work_items_changed") {
           void refreshSnapshot({ background: true });
-          if (payload.type === "work_items_changed") {
-            onWorkItemsChangedRef.current?.();
-          }
+          onWorkItemsChangedRef.current?.();
         }
       } catch {
         void refreshSnapshot({ background: true });
@@ -697,11 +695,15 @@ export function ProjectGanttChart({
       }
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       if (isDisposed) {
         return;
       }
       setSocketStatus("offline");
+      if (event.code === 4401 || event.code === 4403) {
+        setErrorMessage("간트 차트 실시간 연결 권한을 확인하지 못했습니다. 다시 로그인해 주세요.");
+        return;
+      }
       reconnectTimerRef.current = window.setTimeout(() => {
         setSocketRetryKey((value) => value + 1);
       }, 1500);

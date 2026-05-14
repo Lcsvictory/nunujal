@@ -45,9 +45,5 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5073,
     allowedHosts: ['nunujal.o-r.kr'],
-    hmr: {
-      clientPort: 443,
-      host: 'nunujal.o-r.kr'
-    }
   },
 });
