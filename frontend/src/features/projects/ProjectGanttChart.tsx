@@ -185,12 +185,6 @@ function repaintGanttTimeline(ganttInstance: GanttStatic) {
     ganttInstance.setSizes();
     ganttInstance.render();
     ganttInstance.scrollTo(x, y);
-
-    window.requestAnimationFrame(() => {
-      ganttInstance.setSizes();
-      ganttInstance.render();
-      ganttInstance.scrollTo(x, y);
-    });
   });
 }
 
@@ -1203,7 +1197,6 @@ export function ProjectGanttChart({
         })
         .finally(() => {
           setIsSyncing(false);
-          ganttInstance.render(); // force render explicitly
         });
     });
 
@@ -1360,12 +1353,18 @@ export function ProjectGanttChart({
       }
       ganttRef.current.setSizes();
       ganttRef.current.render();
-      if (shouldCenterTodayRef.current) {
-        centerTimelineOnDate(ganttRef.current, today);
-        shouldCenterTodayRef.current = false;
-      } else {
-        ganttRef.current.scrollTo(scrollState.x, scrollState.y);
-      }
+      
+      window.requestAnimationFrame(() => {
+        if (!ganttRef.current) {
+          return;
+        }
+        if (shouldCenterTodayRef.current) {
+          centerTimelineOnDate(ganttRef.current, today);
+          shouldCenterTodayRef.current = false;
+        } else {
+          ganttRef.current.scrollTo(scrollState.x, scrollState.y);
+        }
+      });
     });
   }, [chartRange.end, chartRange.start, dependencies, today, workItems]);
 
@@ -1392,10 +1391,19 @@ export function ProjectGanttChart({
         return;
       }
       ganttRef.current.setSizes();
-      if (!isDateVisible(ganttRef.current, today)) {
-        centerTimelineOnDate(ganttRef.current, today);
-      }
-      shouldCenterTodayRef.current = false;
+      
+      window.requestAnimationFrame(() => {
+        if (!ganttRef.current) {
+          return;
+        }
+        ganttRef.current.render();
+        if (isDateVisible(ganttRef.current, today)) {
+          shouldCenterTodayRef.current = false;
+        } else {
+          centerTimelineOnDate(ganttRef.current, today);
+          shouldCenterTodayRef.current = false;
+        }
+      });
     });
   }, [isVisible, today]);
 
