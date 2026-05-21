@@ -402,6 +402,7 @@ export function ProjectGanttChart({
   const isApplyingSnapshotRef = useRef(false);
   const shouldCenterTodayRef = useRef(true);
   const hasBootstrappedRef = useRef(false);
+  const renderedRangeKeyRef = useRef<string | null>(null);
   const [workItems, setWorkItems] = useState<ChartWorkItem[]>([]);
   const [dependencies, setDependencies] = useState<ChartWorkItemDependency[]>([]);
   const [selectedWorkItemId, setSelectedWorkItemId] = useState<string | null>(null);
@@ -465,6 +466,7 @@ export function ProjectGanttChart({
   useEffect(() => {
     shouldCenterTodayRef.current = true;
     hasBootstrappedRef.current = false;
+    renderedRangeKeyRef.current = null;
     setSelectedWorkItemId(null);
     setWorkItems([]);
     setDependencies([]);
@@ -1175,8 +1177,8 @@ export function ProjectGanttChart({
       );
 
       if (item.startDate === newStart && item.endDate === newEnd) {
-        // 일정이 바뀌지 않아도 dhtmlxgantt UI에서 다시 원위치 렌더링되도록 처리
-        ganttInstance.render();
+        Object.assign(task, toDhtmlxTask(item));
+        ganttInstance.updateTask(id);
         return;
       }
 
@@ -1203,7 +1205,6 @@ export function ProjectGanttChart({
         })
         .finally(() => {
           setIsSyncing(false);
-          ganttInstance.render(); // force render explicitly
         });
     });
 
@@ -1280,6 +1281,8 @@ export function ProjectGanttChart({
     }
 
     const scrollState = ganttInstance.getScrollState();
+    const nextRangeKey = `${chartRange.start.getTime()}:${chartRange.end.getTime()}`;
+    const shouldRenderScale = renderedRangeKeyRef.current !== nextRangeKey;
     const nextTasks = [...workItems]
       .sort((first, second) => first.sortOrder - second.sortOrder || first.numericId - second.numericId)
       .map(toDhtmlxTask);
@@ -1358,8 +1361,11 @@ export function ProjectGanttChart({
       if (!ganttRef.current) {
         return;
       }
-      ganttRef.current.setSizes();
-      ganttRef.current.render();
+      if (shouldRenderScale) {
+        ganttRef.current.setSizes();
+        ganttRef.current.render();
+        renderedRangeKeyRef.current = nextRangeKey;
+      }
       if (shouldCenterTodayRef.current) {
         centerTimelineOnDate(ganttRef.current, today);
         shouldCenterTodayRef.current = false;
