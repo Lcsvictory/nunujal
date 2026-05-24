@@ -107,6 +107,9 @@ class AppUser(Base):
     )
     uploaded_evidence_items: Mapped[list["Evidence"]] = relationship(back_populates="uploaded_by_user")
     uploaded_files: Mapped[list["UploadedFile"]] = relationship(back_populates="uploaded_by_user")
+    created_chat_rooms: Mapped[list["ChatRoom"]] = relationship(back_populates="created_by_user")
+    chat_room_memberships: Mapped[list["ChatRoomMember"]] = relationship(back_populates="user")
+    sent_chat_messages: Mapped[list["ChatMessage"]] = relationship(back_populates="sender_user")
 
 
 class AuthSession(Base):
@@ -189,6 +192,7 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    chat_rooms: Mapped[list["ChatRoom"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
 class ProjectMember(Base):
@@ -210,6 +214,68 @@ class ProjectMember(Base):
 
     project: Mapped["Project"] = relationship(back_populates="members")
     user: Mapped[AppUser] = relationship(back_populates="project_memberships")
+
+
+class ChatRoom(Base):
+    __tablename__ = "chat_room"
+    __table_args__ = (
+        UniqueConstraint("project_id", "room_key", name="uq_chat_room_project_key"),
+        CheckConstraint("room_type IN ('GROUP', 'DIRECT')", name="chk_chat_room_type"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT, Identity(always=True), primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("project.id", ondelete="CASCADE"), nullable=False)
+    room_type: Mapped[str] = mapped_column(VARCHAR(20), nullable=False, default="GROUP", server_default=text("'GROUP'"))
+    room_key: Mapped[str] = mapped_column(VARCHAR(255), nullable=False)
+    title: Mapped[str] = mapped_column(VARCHAR(200), nullable=True)
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    last_message_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=True)
+
+    project: Mapped["Project"] = relationship(back_populates="chat_rooms")
+    created_by_user: Mapped[AppUser] = relationship(back_populates="created_chat_rooms")
+    members: Mapped[list["ChatRoomMember"]] = relationship(back_populates="room", cascade="all, delete-orphan")
+    messages: Mapped[list["ChatMessage"]] = relationship(back_populates="room", cascade="all, delete-orphan")
+
+
+class ChatRoomMember(Base):
+    __tablename__ = "chat_room_member"
+    __table_args__ = (
+        UniqueConstraint("room_id", "user_id", name="uq_chat_room_member_room_user"),
+        CheckConstraint("left_at IS NULL OR left_at >= joined_at", name="chk_chat_room_member_time"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT, Identity(always=True), primary_key=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("chat_room.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False)
+    joined_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    left_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=True)
+    last_read_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=True)
+
+    room: Mapped[ChatRoom] = relationship(back_populates="members")
+    user: Mapped[AppUser] = relationship(back_populates="chat_room_memberships")
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_message"
+    __table_args__ = (
+        CheckConstraint("message_type IN ('TEXT', 'IMAGE', 'FILE')", name="chk_chat_message_type"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT, Identity(always=True), primary_key=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("chat_room.id", ondelete="CASCADE"), nullable=False)
+    sender_user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=False)
+    uploaded_file_id: Mapped[int] = mapped_column(ForeignKey("uploaded_file.id", ondelete="SET NULL"), nullable=True)
+    message_type: Mapped[str] = mapped_column(VARCHAR(20), nullable=False, default="TEXT", server_default=text("'TEXT'"))
+    content: Mapped[str] = mapped_column(TEXT, nullable=False)
+    attachment_expires_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    deleted_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=True)
+
+    room: Mapped[ChatRoom] = relationship(back_populates="messages")
+    sender_user: Mapped[AppUser] = relationship(back_populates="sent_chat_messages")
+    uploaded_file: Mapped["UploadedFile"] = relationship(back_populates="chat_messages")
 
 
 class ProjectJoinRequest(Base):
@@ -355,6 +421,7 @@ class UploadedFile(Base):
     uploaded_by_user: Mapped[AppUser] = relationship(back_populates="uploaded_files")
     work_item_attachments: Mapped[list["WorkItemAttachment"]] = relationship(back_populates="uploaded_file")
     evidences: Mapped[list["Evidence"]] = relationship(back_populates="uploaded_file")
+    chat_messages: Mapped[list["ChatMessage"]] = relationship(back_populates="uploaded_file")
 
 
 class WorkItemAttachment(Base):

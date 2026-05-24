@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 import app.models as models
 from app.core.security import get_authenticated_user
 from app.database import get_session
+from app.services.chat import ensure_project_group_chat
 
 router = APIRouter()
 
@@ -108,6 +109,9 @@ def create_project_join_request(
                 join_request.review_note = "Automatically approved by project join policy."
                 join_request.reviewed_at = now
                 join_request.updated_at = now
+
+            session.flush()
+            ensure_project_group_chat(session, project, current_user.id)
 
             response_message = "Join request was auto-approved and you were added to the project."
             membership_created = True

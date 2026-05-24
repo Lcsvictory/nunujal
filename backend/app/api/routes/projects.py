@@ -14,6 +14,7 @@ import app.models as models
 from app.core.config import get_settings
 from app.core.security import get_authenticated_user, get_authenticated_user_from_token
 from app.database import get_session
+from app.services.chat import ensure_project_group_chat
 from app.services.upload_files import (
     build_s3_object_key,
     create_presigned_download_url,
@@ -888,6 +889,8 @@ def create_project(
             memo="Project creator",
         )
         session.add(leader_member)
+        session.flush()
+        ensure_project_group_chat(session, project, current_user.id)
         session.commit()
         session.refresh(project)
         session.refresh(leader_member)
@@ -1003,6 +1006,15 @@ def delete_project_uploaded_file(
             .filter(models.Evidence.uploaded_file_id == uploaded_file.id)
             .delete(synchronize_session=False)
         )
+        linked_chat_count = (
+            session.query(func.count(models.ChatMessage.id))
+            .filter(models.ChatMessage.uploaded_file_id == uploaded_file.id)
+            .scalar()
+            or 0
+        )
+        if linked_chat_count:
+            raise HTTPException(status_code=400, detail="Uploaded file is already linked to chat messages.")
+
         delete_s3_object(settings, object_key=object_key)
         session.delete(uploaded_file)
         session.commit()
@@ -1987,6 +1999,9 @@ def review_project_join_request(
             else:
                 # If they somehow are already members and requested again, just resolve the request.
                 pass
+
+            session.flush()
+            ensure_project_group_chat(session, _project, current_user.id)
         
         session.commit()
         return {"status": "success", "message": f"Join request {status_value.lower()}."}

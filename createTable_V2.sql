@@ -177,6 +177,102 @@ CREATE TABLE project_member (
         CHECK (left_at IS NULL OR left_at >= joined_at)
 );
 
+CREATE TABLE chat_room (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    project_id BIGINT NOT NULL,
+    room_type VARCHAR(20) NOT NULL DEFAULT 'GROUP',
+    room_key VARCHAR(255) NOT NULL,
+    title VARCHAR(200),
+    created_by_user_id BIGINT,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_message_at TIMESTAMP,
+
+    CONSTRAINT fk_chat_room_project
+        FOREIGN KEY (project_id)
+        REFERENCES project(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_chat_room_created_by_user
+        FOREIGN KEY (created_by_user_id)
+        REFERENCES app_user(id),
+
+    CONSTRAINT uq_chat_room_project_key
+        UNIQUE (project_id, room_key),
+
+    CONSTRAINT chk_chat_room_type
+        CHECK (room_type IN ('GROUP', 'DIRECT'))
+);
+
+CREATE TABLE chat_room_member (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    room_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+
+    joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    left_at TIMESTAMP,
+    last_read_at TIMESTAMP,
+
+    CONSTRAINT fk_chat_room_member_room
+        FOREIGN KEY (room_id)
+        REFERENCES chat_room(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_chat_room_member_user
+        FOREIGN KEY (user_id)
+        REFERENCES app_user(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT uq_chat_room_member_room_user
+        UNIQUE (room_id, user_id),
+
+    CONSTRAINT chk_chat_room_member_time
+        CHECK (left_at IS NULL OR left_at >= joined_at)
+);
+
+CREATE TABLE chat_message (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    room_id BIGINT NOT NULL,
+    sender_user_id BIGINT NOT NULL,
+    uploaded_file_id BIGINT,
+
+    message_type VARCHAR(20) NOT NULL DEFAULT 'TEXT',
+    content TEXT NOT NULL,
+    attachment_expires_at TIMESTAMP,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP,
+
+    CONSTRAINT fk_chat_message_room
+        FOREIGN KEY (room_id)
+        REFERENCES chat_room(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_chat_message_sender_user
+        FOREIGN KEY (sender_user_id)
+        REFERENCES app_user(id),
+
+
+    CONSTRAINT chk_chat_message_type
+        CHECK (message_type IN ('TEXT', 'IMAGE', 'FILE'))
+);
+
+CREATE INDEX idx_chat_room_project_last_message
+    ON chat_room(project_id, last_message_at DESC);
+
+CREATE INDEX idx_chat_room_member_user_active
+    ON chat_room_member(user_id, left_at);
+
+CREATE INDEX idx_chat_message_room_created
+    ON chat_message(room_id, created_at DESC);
+
+CREATE INDEX idx_chat_message_uploaded_file
+    ON chat_message(uploaded_file_id);
+
 CREATE TABLE uploaded_file (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
@@ -206,6 +302,12 @@ CREATE TABLE uploaded_file (
     CONSTRAINT chk_uploaded_file_size_positive
         CHECK (file_size_bytes > 0)
 );
+
+ALTER TABLE chat_message
+    ADD CONSTRAINT fk_chat_message_uploaded_file
+    FOREIGN KEY (uploaded_file_id)
+    REFERENCES uploaded_file(id)
+    ON DELETE SET NULL;
 
 CREATE TABLE work_item (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
