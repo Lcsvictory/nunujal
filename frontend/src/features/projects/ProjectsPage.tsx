@@ -100,10 +100,13 @@ export function ProjectsPage({
     };
   }, [projects]);
 
-  const handleCreated = async (projectId: number, message: string) => {
-    setNotice({ tone: "success", message });
+  const handleCreated = async (_projectId: number, message: string) => {
+    setNotice({
+      tone: "success",
+      title: "프로젝트 생성 완료",
+      message: `${message} 목록에서 프로젝트를 선택해 입장하세요.`,
+    });
     await loadProjects();
-    onOpenProject(projectId);
   };
 
   const handleJoined = async (result: JoinProjectResponse) => {
