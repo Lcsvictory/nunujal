@@ -3,9 +3,19 @@ import { ErrorPage } from "./features/auth/ErrorPage";
 import { LandingPage } from "./features/auth/LandingPage";
 import { LoginPage } from "./features/auth/LoginPage";
 import { MyPage } from "./features/auth/MyPage";
+import { ChatWidget } from "./features/chat/ChatWidget";
 import { ProjectOverviewPage } from "./features/projects/ProjectOverviewPage";
 import { ProjectsPage } from "./features/projects/ProjectsPage";
 import { isKnownPath, navigate, parseLocation } from "./lib/router";
+
+function withChatWidget(content: JSX.Element) {
+  return (
+    <>
+      {content}
+      <ChatWidget />
+    </>
+  );
+}
 
 export default function App() {
   const [{ screen, params, projectId }, setRoute] = useState(() =>
@@ -32,29 +42,29 @@ export default function App() {
   }
 
   if (screen === "projects") {
-    return (
+    return withChatWidget(
       <ProjectsPage
         onMoveToLogin={() => navigate("/login")}
         onOpenProject={(nextProjectId) => navigate(`/projects/${nextProjectId}`)}
-      />
+      />,
     );
   }
 
   if (screen === "my-page") {
-    return (
+    return withChatWidget(
       <MyPage
         onMoveBack={() => navigate("/projects")}
         onMoveToLogin={() => navigate("/login")}
-      />
+      />,
     );
   }
 
   if (screen === "project-overview") {
-    return (
+    return withChatWidget(
       <ProjectOverviewPage
         projectId={projectId}
         onMoveToProjects={() => navigate("/projects")}
-      />
+      />,
     );
   }
 
