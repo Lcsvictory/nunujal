@@ -434,28 +434,13 @@ export function ProjectOverviewPage({
           </div>
         </div>
 
-        <div className="workspace-topbar-actions" style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <div className="workspace-active-users" style={{ display: "flex", gap: "8px", marginRight: "10px" }}>
+        <div className="workspace-topbar-actions">
+          <div className="workspace-active-users">
             {activeTeammates.map((u, idx) => (
               <div 
                 key={idx} 
                 className="workspace-active-user-avatar"
-                style={{ 
-                  position: "relative",
-                  width: "44px", 
-                  height: "44px", 
-                  borderRadius: "50%", 
-                  border: "2px solid white", 
-                  marginLeft: "-10px", 
-                  zIndex: activeTeammates.length - idx, 
-                  backgroundColor: "#ccc", 
-                  display: "flex", 
-                  alignItems: "center", 
-                  justifyContent: "center", 
-                  fontSize: "18px", 
-                  fontWeight: "bold", 
-                  color: "#555" 
-                }} 
+                style={{ zIndex: activeTeammates.length - idx }} 
               >
                 {u.profile_image_url ? (
                   <img 

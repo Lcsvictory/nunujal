@@ -1150,6 +1150,34 @@ textarea {
   gap: 14px;
 }
 
+.workspace-active-users {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-right: 10px;
+}
+
+.workspace-active-user-avatar {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -10px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: #d8deeb;
+  color: #47546f;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.workspace-active-user-avatar:first-child {
+  margin-left: 0;
+}
+
 .workspace-profile-trigger {
   display: flex;
   align-items: center;
@@ -3194,3 +3222,252 @@ textarea {
     max-width: 92%;
   }
 }
+
+/* Workspace responsive shell */
+@media (max-width: 900px) {
+  .workspace-shell {
+    height: 100dvh;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .workspace-topbar {
+    height: auto;
+    min-height: 0;
+    padding: 14px 18px;
+  }
+
+  .workspace-brand,
+  .workspace-profile-copy {
+    min-width: 0;
+  }
+
+  .workspace-brand-mark {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    font-size: 1.55rem;
+  }
+
+  .workspace-brand-copy strong {
+    font-size: 1.55rem;
+  }
+
+  .workspace-brand-copy span,
+  .workspace-profile-copy strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .workspace-profile-trigger {
+    min-width: 0;
+    padding: 8px 12px 8px 8px;
+    border-radius: 18px;
+  }
+
+  .workspace-profile-image,
+  .workspace-profile-fallback {
+    width: 42px;
+    height: 42px;
+  }
+
+  .workspace-layout,
+  .workspace-layout-collapsed {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .workspace-sidebar,
+  .workspace-sidebar-collapsed {
+    display: block;
+    border-right: 0;
+    border-bottom: 1px solid #dde2ef;
+    overflow: hidden;
+  }
+
+  .workspace-sidebar-header,
+  .workspace-sidebar-footer {
+    display: none;
+  }
+
+  .workspace-nav,
+  .gantt-toolbar-actions-row,
+  .gantt-legend-group {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .workspace-nav::-webkit-scrollbar,
+  .gantt-toolbar-actions-row::-webkit-scrollbar,
+  .gantt-legend-group::-webkit-scrollbar {
+    display: none;
+  }
+
+  .workspace-nav {
+    grid-template-columns: none;
+    gap: 8px;
+    padding: 10px 16px;
+  }
+
+  .workspace-nav-item,
+  .workspace-sidebar-collapsed .workspace-nav-item {
+    width: 58px;
+    min-width: 58px;
+    min-height: 52px;
+    flex: 0 0 58px;
+    justify-content: center;
+    padding: 0;
+    border-radius: 16px;
+  }
+
+  .workspace-nav-item span,
+  .workspace-sidebar-collapsed .workspace-nav-item span {
+    display: none;
+  }
+
+  .workspace-content {
+    padding: 18px;
+  }
+
+  .gantt-card,
+  .workspace-project-card,
+  .workspace-progress-panel,
+  .workspace-activity-panel,
+  .workspace-placeholder-panel {
+    padding: 22px;
+    border-radius: 20px;
+  }
+
+  .gantt-fullscreen-button,
+  .gantt-legend-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace-topbar {
+    flex-direction: row;
+    align-items: center;
+    padding: 12px 14px;
+  }
+
+  .workspace-brand {
+    gap: 10px;
+  }
+
+  .workspace-brand-mark {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    font-size: 1.35rem;
+  }
+
+  .workspace-brand-copy strong {
+    font-size: 1.35rem;
+  }
+
+  .workspace-topbar-actions {
+    width: auto;
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .workspace-active-users,
+  .workspace-profile-copy,
+  .workspace-brand-copy span {
+    display: none;
+  }
+
+  .workspace-profile-trigger,
+  .workspace-logout-button {
+    width: auto;
+  }
+
+  .workspace-profile-trigger {
+    justify-content: center;
+    padding: 7px;
+    gap: 0;
+  }
+
+  .workspace-profile-image,
+  .workspace-profile-fallback {
+    width: 38px;
+    height: 38px;
+  }
+
+  .workspace-nav {
+    padding: 8px 12px;
+  }
+
+  .workspace-nav-item,
+  .workspace-sidebar-collapsed .workspace-nav-item {
+    width: 52px;
+    min-width: 52px;
+    min-height: 48px;
+    flex-basis: 52px;
+    border-radius: 14px;
+  }
+
+  .workspace-content {
+    padding: 14px;
+  }
+
+  .gantt-card,
+  .workspace-project-card,
+  .workspace-progress-panel,
+  .workspace-activity-panel,
+  .workspace-placeholder-panel {
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .gantt-fullscreen-button {
+    min-height: 42px;
+    padding: 0 16px;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 440px) {
+  .workspace-brand-copy strong {
+    font-size: 1.22rem;
+  }
+
+  .workspace-topbar {
+    padding: 10px 12px;
+  }
+
+  .workspace-nav {
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .workspace-nav-item,
+  .workspace-sidebar-collapsed .workspace-nav-item {
+    width: 48px;
+    min-width: 48px;
+    min-height: 46px;
+    flex-basis: 48px;
+  }
+
+  .workspace-content {
+    padding: 10px;
+  }
+
+  .gantt-card,
+  .workspace-project-card,
+  .workspace-progress-panel,
+  .workspace-activity-panel,
+  .workspace-placeholder-panel {
+    padding: 14px;
+    border-radius: 16px;
+  }
+}
+
