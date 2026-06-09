@@ -79,31 +79,46 @@
 
 .contribution-pie-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
-  gap: 26px;
-  align-items: center;
+  grid-template-columns: minmax(360px, 500px) minmax(360px, 1fr);
+  gap: 28px;
+  align-items: start;
 }
 
 .contribution-pie {
-  width: min(420px, 100%);
+  width: min(500px, 100%);
   height: auto;
   filter: drop-shadow(0 8px 16px rgba(15, 23, 42, 0.12));
+  overflow: visible;
+}
+
+.contribution-pie-segment {
+  cursor: pointer;
+  outline: none;
 }
 
 .contribution-pie-slice {
-  cursor: pointer;
-  opacity: 0.9;
+  opacity: 0.92;
   stroke: #fff;
+  stroke-linejoin: round;
   stroke-width: 2;
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease;
 }
 
-.contribution-pie-slice:hover,
-.contribution-pie-slice-active {
+.contribution-pie-segment:hover .contribution-pie-slice,
+.contribution-pie-segment:focus-visible .contribution-pie-slice,
+.contribution-pie-segment-selected .contribution-pie-slice {
+  filter: drop-shadow(0 8px 10px rgba(15, 23, 42, 0.28));
   opacity: 1;
-  transform: scale(1.025);
+  stroke-width: 4;
+}
+
+.contribution-pie-segment-selected .contribution-pie-slice {
+  stroke: #f8f9fa;
+  stroke-width: 5;
+}
+
+.contribution-pie-segment-selected .contribution-pie-label {
+  font-size: 14px;
 }
 
 .contribution-pie-label {
@@ -148,6 +163,23 @@
   color: #495057;
   line-height: 1.5;
   margin: 10px 0 0;
+}
+
+.contribution-selected-detail {
+  align-self: start;
+  justify-self: start;
+  margin-top: 76px;
+  min-width: 0;
+  width: min(620px, 100%);
+}
+
+.contribution-card-selected {
+  border-left-width: 6px;
+  margin: 0;
+}
+
+.contribution-card-self {
+  border-left-color: #20c997;
 }
 
 .contribution-my-panel {
@@ -329,12 +361,26 @@
 .contribution-card-footer {
   display: flex;
   justify-content: flex-start;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   margin-top: 12px;
   border-top: 1px solid #f1f3f5;
   padding-top: 12px;
   flex-wrap: wrap;
+}
+
+.contribution-card-footer .button,
+.contribution-card-footer .contribution-review-toggle {
+  box-sizing: border-box;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.contribution-card-footer .button {
+  box-shadow: inset 0 0 0 1px rgba(124, 143, 191, 0.18);
 }
 
 .contribution-card-detail {
@@ -516,6 +562,11 @@
 
   .contribution-pie {
     justify-self: center;
+  }
+
+  .contribution-selected-detail {
+    margin-top: 0;
+    width: 100%;
   }
 
   .contribution-my-main,
