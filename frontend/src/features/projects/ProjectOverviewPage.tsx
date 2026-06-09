@@ -216,6 +216,8 @@ export function ProjectOverviewPage({
       return null;
     }
 
+    const recentActivities = project.overview.recent_activities.slice(0, 5);
+
     return (
       <div className="workspace-section-stack">
         <ProjectGanttChart
@@ -314,9 +316,9 @@ export function ProjectOverviewPage({
               </div>
             </div>
 
-            {project.overview.recent_activities.length > 0 ? (
+            {recentActivities.length > 0 ? (
               <div className="activity-list">
-                {project.overview.recent_activities.map((activity) => (
+                {recentActivities.map((activity) => (
                   <article key={activity.id} className="activity-item" style={{ position: 'relative' }}>
                     <div className="activity-copy">
                       <div className="activity-topline">
