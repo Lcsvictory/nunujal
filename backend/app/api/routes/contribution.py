@@ -368,6 +368,22 @@ def get_latest_contribution(
         session.close()
 
 
+
+def _ensure_contribution_stream_session_is_active(
+    project_id: int,
+    expected_user_id: int,
+    request: FastAPIRequest,
+    authorization: str | None,
+) -> None:
+    session = get_session()
+    try:
+        user = get_authenticated_user(session, request, authorization)
+        if user.id != expected_user_id:
+            raise HTTPException(status_code=401, detail="Session user changed.")
+        _require_project_access(session, project_id, user.id)
+    finally:
+        session.close()
+
 @router.get("/{project_id}/contribution/events", summary="Subscribe contribution assessment events")
 async def stream_contribution_events(
     project_id: int,
@@ -395,6 +411,17 @@ async def stream_contribution_events(
 
             while True:
                 if await request.is_disconnected():
+                    break
+
+                try:
+                    _ensure_contribution_stream_session_is_active(
+                        project_id,
+                        user_id,
+                        request,
+                        authorization,
+                    )
+                except HTTPException as exc:
+                    yield _format_sse("contribution_error", {"detail": exc.detail})
                     break
 
                 try:

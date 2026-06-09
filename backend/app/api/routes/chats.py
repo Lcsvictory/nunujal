@@ -27,6 +27,7 @@ router = APIRouter()
 settings = get_settings()
 CHAT_ATTACHMENT_RETENTION_DAYS = 5
 CHAT_ATTACHMENT_MESSAGE_TYPES = {"IMAGE", "FILE"}
+CHAT_SESSION_REVALIDATE_SECONDS = 5
 KST = timezone(timedelta(hours=9))
 
 
@@ -703,6 +704,16 @@ def mark_chat_room_read(
         session.close()
 
 
+
+def _ensure_chat_session_is_active(access_token: str | None, expected_user_id: int) -> None:
+    session = get_session()
+    try:
+        user = get_authenticated_user_from_token(session, access_token)
+        if user.id != expected_user_id:
+            raise HTTPException(status_code=401, detail="Session user changed.")
+    finally:
+        session.close()
+
 @router.websocket("/ws")
 async def chat_events(websocket: WebSocket) -> None:
     session = get_session()
@@ -726,7 +737,14 @@ async def chat_events(websocket: WebSocket) -> None:
         await websocket.send_json({"type": "chat_connected", "occurred_at": datetime.now().isoformat()})
 
         while True:
-            await websocket.receive_text()
+            _ensure_chat_session_is_active(access_token, current_user_id)
+            try:
+                await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=CHAT_SESSION_REVALIDATE_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                continue
     except HTTPException as exc:
         close_code = 4401 if exc.status_code == 401 else 4403
         await websocket.close(code=close_code)
