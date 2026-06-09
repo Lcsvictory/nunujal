@@ -174,7 +174,6 @@ function centerTimelineOnDate(ganttInstance: GanttStatic, date: Date) {
 
   const { y } = ganttInstance.getScrollState();
   const targetX = ganttInstance.posFromDate(date) - timelineArea.clientWidth / 2;
-  console.log(`Centering timeline on ${date.toISOString().split("T")[0]} at x=${targetX}, y=${y}`);
   ganttInstance.scrollTo(Math.max(targetX, 0), y);
 }
 
@@ -725,18 +724,23 @@ export function ProjectGanttChart({
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(document.fullscreenElement === shellRef.current);
-      if (!ganttRef.current) {
+      const ganttInstance = ganttRef.current;
+      if (!ganttInstance) {
         return;
       }
 
-      shouldCenterTodayRef.current = true;
-      window.requestAnimationFrame(() => {
-        if (!ganttRef.current) {
+      renderedRangeKeyRef.current = null;
+
+      const refreshFullscreenLayout = () => {
+        const currentGantt = ganttRef.current;
+        if (!currentGantt) {
           return;
         }
-        ganttRef.current.setSizes();
-        centerTimelineOnDate(ganttRef.current, today);
-      });
+        repaintGanttTimeline(currentGantt);
+      };
+
+      window.requestAnimationFrame(refreshFullscreenLayout);
+      window.setTimeout(refreshFullscreenLayout, 160);
     };
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -1001,10 +1005,18 @@ export function ProjectGanttChart({
     };
     ganttInstance.init(container);
 
+    const taskArea = ganttInstance.$task as HTMLElement | undefined;
     const taskData = ganttInstance.$task_data as HTMLElement | undefined;
+    const wheelTargets = Array.from(
+      new Set([taskArea, taskData].filter((target): target is HTMLElement => Boolean(target))),
+    );
+    const removeWheelOptions: EventListenerOptions = { capture: true };
     const handleTimelineWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      shouldCenterTodayRef.current = false;
+
       if (event.ctrlKey || event.metaKey) {
-        event.preventDefault();
         suppressZoomCenterRef.current = true;
         if (event.deltaY < 0) {
           ganttInstance.ext.zoom.zoomIn();
@@ -1016,7 +1028,6 @@ export function ProjectGanttChart({
       }
 
       if (event.altKey) {
-        event.preventDefault();
         const nextZoomIndex = clamp(
           verticalZoomIndexRef.current + (event.deltaY < 0 ? 1 : -1),
           0,
@@ -1030,13 +1041,14 @@ export function ProjectGanttChart({
         return;
       }
 
-      event.preventDefault();
       const { x, y } = ganttInstance.getScrollState();
       const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
       ganttInstance.scrollTo(Math.max(x + delta, 0), y);
     };
 
-    taskData?.addEventListener("wheel", handleTimelineWheel, { passive: false });
+    wheelTargets.forEach((target) => {
+      target.addEventListener("wheel", handleTimelineWheel, { passive: false, capture: true });
+    });
 
     const zoomEventId = ganttInstance.ext.zoom.attachEvent("onAfterZoom", (_level, config) => {
       setCurrentZoomLevel(config.name);
@@ -1045,12 +1057,7 @@ export function ProjectGanttChart({
         repaintGanttTimeline(ganttInstance);
         return true;
       }
-      shouldCenterTodayRef.current = true;
-      window.requestAnimationFrame(() => {
-        if (ganttRef.current) {
-          centerTimelineOnDate(ganttRef.current, today);
-        }
-      });
+      repaintGanttTimeline(ganttInstance);
       return true;
     });
     const taskClickEventId = ganttInstance.attachEvent("onTaskClick", (id) => {
@@ -1252,7 +1259,9 @@ export function ProjectGanttChart({
     });
 
     return () => {
-      taskData?.removeEventListener("wheel", handleTimelineWheel);
+      wheelTargets.forEach((target) => {
+        target.removeEventListener("wheel", handleTimelineWheel, removeWheelOptions);
+      });
       ganttInstance.ext.zoom.detachEvent(zoomEventId);
       ganttInstance.detachEvent(taskClickEventId);
       ganttInstance.detachEvent(emptyClickEventId);
@@ -1392,18 +1401,16 @@ export function ProjectGanttChart({
       return;
     }
 
-    shouldCenterTodayRef.current = true;
+    const scrollState = ganttRef.current.getScrollState();
     window.requestAnimationFrame(() => {
       if (!ganttRef.current) {
         return;
       }
       ganttRef.current.setSizes();
-      if (!isDateVisible(ganttRef.current, today)) {
-        centerTimelineOnDate(ganttRef.current, today);
-      }
-      shouldCenterTodayRef.current = false;
+      ganttRef.current.render();
+      ganttRef.current.scrollTo(scrollState.x, scrollState.y);
     });
-  }, [isVisible, today]);
+  }, [isVisible]);
 
   useEffect(() => {
     if (!isVisible) {
@@ -1567,7 +1574,6 @@ export function ProjectGanttChart({
               </button>
               <div className="gantt-zoom-level">
                 <strong>{currentZoomLevel}</strong>
-                <span>Shift + wheel 좌우 스크롤</span>
               </div>
               <button type="button" className="gantt-zoom-button" onClick={handleZoomIn}>
                 +

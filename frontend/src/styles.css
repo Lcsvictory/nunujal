@@ -1882,15 +1882,49 @@ textarea {
   width: 100vw;
   height: 100vh;
   max-width: none;
-  padding: 24px;
+  padding: 12px;
   border-radius: 0;
   background: #f7f8fc;
-  overflow: auto;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+}
+
+.gantt-card:fullscreen > .section-heading,
+.gantt-card:-webkit-full-screen > .section-heading {
+  display: none;
+}
+
+.gantt-card:fullscreen .gantt-toolbar,
+.gantt-card:-webkit-full-screen .gantt-toolbar {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.gantt-card:fullscreen .gantt-toolbar-copy,
+.gantt-card:-webkit-full-screen .gantt-toolbar-copy {
+  gap: 8px;
+}
+
+.gantt-card:fullscreen .gantt-workspace-layout,
+.gantt-card:-webkit-full-screen .gantt-workspace-layout,
+.gantt-card:fullscreen .gantt-library-shell,
+.gantt-card:-webkit-full-screen .gantt-library-shell {
+  min-height: 0;
+  height: 100%;
 }
 
 .gantt-card:fullscreen .gantt-library-host,
 .gantt-card:-webkit-full-screen .gantt-library-host {
-  height: max(520px, calc(100vh - 340px));
+  height: 100%;
+  min-height: 0;
+}
+
+.gantt-card:fullscreen .gantt_container,
+.gantt-card:-webkit-full-screen .gantt_container {
+  height: 100% !important;
 }
 
 .gantt-library-shell .gantt_container {
