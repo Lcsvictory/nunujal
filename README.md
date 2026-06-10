@@ -1,6 +1,8 @@
 # NunuJal
 
-Team collaboration web service for university projects.
+대학생을 위한 팀 프로젝트 협업 도구
+객관적인 기여도 산정
+태스크 관리
 
 ## Stack
 
@@ -13,88 +15,16 @@ Team collaboration web service for university projects.
 - `frontend`: React web app
 - `backend`: FastAPI server
 
-## Local Run
+# 각종 페이지
 
-### Frontend
+## 메인 페이지
+<img width="1498" height="804" alt="image" src="https://github.com/user-attachments/assets/7ed1ed8a-3fc6-434e-9d5e-b9a5f5143586" />
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+## 기여도 페이지
+<img width="1452" height="741" alt="image" src="https://github.com/user-attachments/assets/d9c42e25-0007-43fd-bfee-030de30157e3" />
 
-### Backend
+## 간트 차트
+<img width="1489" height="926" alt="image" src="https://github.com/user-attachments/assets/28ff822a-7bdf-45a8-82f2-5b6e0b537ebc" />
 
-```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-### Database
-
-Use PostgreSQL and copy `backend/.env.example` to `backend/.env`.
-Set `DATABASE_URL` to your actual PostgreSQL server.
-
-## Docker Dev Environment
-
-### Why another compose file
-
-`docker-compose.dev.yml` reproduces the actual development environment with:
-
-- `frontend`: Vite dev server with hot reload
-- `backend`: FastAPI + Uvicorn reload server
-
-This split is better than forcing everything into one Dockerfile because this repository is not a single process app. The frontend and backend have different runtimes and different reload behavior.
-The database is intentionally excluded from Docker so the backend can connect to the real PostgreSQL server you are already using.
-
-### Files added for Docker development
-
-- `frontend/Dockerfile.dev`
-- `backend/Dockerfile.dev`
-- `docker-compose.dev.yml`
-- `backend/.env.example`
-
-### Build and run
-
-1. Create the backend environment file.
-
-```bash
-copy backend\.env.example backend\.env
-```
-
-2. Edit `backend/.env` and set `DATABASE_URL` to your real PostgreSQL server.
-
-If your database is running on the host machine itself, use `host.docker.internal` as the host value inside `DATABASE_URL`.
-
-3. Start the frontend and backend containers.
-
-```bash
-docker compose -f docker-compose.dev.yml up --build
-```
-
-4. Open the services.
-
-- Frontend: `http://localhost:5073`
-- Backend: `http://localhost:8028`
-
-### Stop the environment
-
-```bash
-docker compose -f docker-compose.dev.yml down
-```
-
-If you also want to remove the frontend container volume cache:
-
-```bash
-docker compose -f docker-compose.dev.yml down -v
-```
-
-### Notes
-
-- The dev compose mounts the source code into the containers, so code changes are reflected without rebuilding the image.
-- The frontend container uses polling to make file watching stable on Docker Desktop.
-- The backend container uses the same FastAPI reload flow as local development.
-- Backend secrets and DB connection are read from `backend/.env` instead of being hardcoded in the compose file.
+## 할일 보드
+<img width="1481" height="797" alt="image" src="https://github.com/user-attachments/assets/ded6c133-c4f1-4339-b281-b3fabe6b8737" />
