@@ -47,6 +47,7 @@ export function MyPage({
   const [isEditing, setIsEditing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const hasProjectRoleContext = Boolean(projectId && membership);
 
   useEffect(() => {
     if (!initialUser) {
@@ -99,8 +100,12 @@ export function MyPage({
       return false;
     }
 
+    if (!hasProjectRoleContext) {
+      return false;
+    }
+
     return formState.role.trim() !== (membership?.position_label ?? "");
-  }, [formState.role, membership, user]);
+  }, [formState.role, hasProjectRoleContext, membership, user]);
 
   const handleCancel = () => {
     setFormState({ role: membership?.position_label ?? "" });
@@ -163,7 +168,7 @@ export function MyPage({
             <p className="section-label">profile</p>
             <h2>내 정보</h2>
           </div>
-          {!isEditing && user && projectId && membership ? (
+          {!isEditing && user && hasProjectRoleContext ? (
             <button type="button" className="button button-secondary" onClick={() => setIsEditing(true)}>
               역할 수정
             </button>
@@ -201,13 +206,15 @@ export function MyPage({
                 <dt>이메일</dt>
                 <dd>{user.email}</dd>
               </div>
-              <div>
-                <dt>역할</dt>
-                <dd>{membership?.position_label || ""}</dd>
-              </div>
+              {hasProjectRoleContext ? (
+                <div>
+                  <dt>역할</dt>
+                  <dd>{membership?.position_label || ""}</dd>
+                </div>
+              ) : null}
             </dl>
 
-            {isEditing ? (
+            {isEditing && hasProjectRoleContext ? (
               <label className="field">
                 <span>역할</span>
                 <input

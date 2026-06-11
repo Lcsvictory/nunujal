@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Overlay } from '../../components/Overlay';
 import { apiJsonRequest } from "../../lib/api";
 import { fetchProjectWorkItems } from "./api";
@@ -40,18 +40,24 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
     editContext?.activity_type ? editContext.activity_type.split(',').map((t: string) => t.trim()).filter(Boolean) : []
   );
   const [tagInput, setTagInput] = useState("");
+  const [isTagComposing, setIsTagComposing] = useState(false);
+  const shouldAddTagAfterCompositionRef = useRef(false);
 
-  const addTag = (e?: React.SyntheticEvent) => {
-    if (e) e.preventDefault();
-    const trimmed = tagInput.trim();
-    if (trimmed && !tags.includes(trimmed)) {
-      setTags([...tags, trimmed]);
+  const addTagValue = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed) {
+      setTags((current) => current.includes(trimmed) ? current : [...current, trimmed]);
     }
     setTagInput("");
   };
 
+  const addTag = (e?: React.SyntheticEvent) => {
+    if (e) e.preventDefault();
+    addTagValue(tagInput);
+  };
+
   const removeTag = (tagToRemove: string) => {
-    setTags(tags.filter(t => t !== tagToRemove));
+    setTags((current) => current.filter(t => t !== tagToRemove));
   };
 
   useEffect(() => {
@@ -257,8 +263,20 @@ export function ActivityLogOverlay({ projectId, initialTaskId, currentUserId, ed
               type="text" 
               value={tagInput} 
               onChange={e => setTagInput(e.target.value)}
+              onCompositionStart={() => setIsTagComposing(true)}
+              onCompositionEnd={(e) => {
+                setIsTagComposing(false);
+                if (shouldAddTagAfterCompositionRef.current) {
+                  shouldAddTagAfterCompositionRef.current = false;
+                  addTagValue(e.currentTarget.value);
+                }
+              }}
               onKeyDown={e => {
                 if (e.key === 'Enter') {
+                  if (isTagComposing || e.nativeEvent.isComposing) {
+                    shouldAddTagAfterCompositionRef.current = true;
+                    return;
+                  }
                   e.preventDefault();
                   addTag();
                 }

@@ -29,6 +29,10 @@ router = APIRouter()
 settings = get_settings()
 
 
+def _activity_updated_at(activity: models.Activity) -> datetime:
+    return max(datetime.now(), activity.occurred_at, activity.created_at)
+
+
 def _is_websocket_not_connected_error(exc: RuntimeError) -> bool:
     return "WebSocket is not connected" in str(exc)
 
@@ -240,6 +244,85 @@ def _serialize_project_membership(project_member: models.ProjectMember) -> dict[
         "position_label": project_member.position_label,
         "joined_at": project_member.joined_at.isoformat(),
         "left_at": project_member.left_at.isoformat() if project_member.left_at else None,
+    }
+
+
+def _empty_project_member_activity_stats() -> dict[str, int]:
+    return {
+        "total_count": 0,
+        "basic_count": 0,
+        "peer_support_count": 0,
+        "common_count": 0,
+        "under_review_count": 0,
+        "resolved_count": 0,
+    }
+
+
+def _build_project_member_activity_stats(
+    session: Session,
+    project_id: int,
+    user_ids: list[int],
+) -> dict[int, dict[str, int]]:
+    stats = {user_id: _empty_project_member_activity_stats() for user_id in user_ids}
+    if not user_ids:
+        return stats
+
+    rows = (
+        session.query(
+            models.Activity.actor_user_id,
+            models.Activity.activity_category,
+            models.Activity.review_state,
+            func.count(models.Activity.id),
+        )
+        .filter(
+            models.Activity.project_id == project_id,
+            models.Activity.source_type != "SYSTEM_IMPORTED",
+            models.Activity.actor_user_id.in_(user_ids),
+        )
+        .group_by(
+            models.Activity.actor_user_id,
+            models.Activity.activity_category,
+            models.Activity.review_state,
+        )
+        .all()
+    )
+
+    for actor_user_id, activity_category, review_state, count in rows:
+        member_stats = stats.get(actor_user_id)
+        if member_stats is None:
+            continue
+
+        value = int(count or 0)
+        member_stats["total_count"] += value
+        if activity_category == "BASIC":
+            member_stats["basic_count"] += value
+        elif activity_category == "PEER_SUPPORT":
+            member_stats["peer_support_count"] += value
+        elif activity_category == "COMMON":
+            member_stats["common_count"] += value
+
+        if review_state == "UNDER_REVIEW":
+            member_stats["under_review_count"] += value
+        elif review_state == "RESOLVED":
+            member_stats["resolved_count"] += value
+
+    return stats
+
+
+def _serialize_project_member_summary(
+    project_member: models.ProjectMember,
+    user: models.AppUser,
+    activity_stats: dict[str, int] | None = None,
+) -> dict[str, object]:
+    return {
+        "project_member_id": project_member.id,
+        "user_id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "profile_image_url": user.profile_image_url,
+        "project_role": project_member.project_role,
+        "position_label": project_member.position_label,
+        "activity_stats": activity_stats or _empty_project_member_activity_stats(),
     }
 
 
@@ -1590,6 +1673,8 @@ def get_project(
             key=lambda row: (row[0].project_role != "LEADER", row[1].name.casefold()),
         )
         member_count = len(sorted_members)
+        member_user_ids = [member.id for _project_member, member in sorted_members]
+        member_activity_stats = _build_project_member_activity_stats(session, project_id, member_user_ids)
 
         work_items = (
             session.query(models.WorkItem)
@@ -1638,14 +1723,11 @@ def get_project(
                 "member_count": member_count,
                 "my_membership": _serialize_project_membership(my_membership),
                 "members": [
-                    {
-                        "project_member_id": project_member.id,
-                        "user_id": member.id,
-                        "name": member.name,
-                        "email": member.email,
-                        "project_role": project_member.project_role,
-                        "position_label": project_member.position_label,
-                    }
+                    _serialize_project_member_summary(
+                        project_member,
+                        member,
+                        member_activity_stats.get(member.id),
+                    )
                     for project_member, member in sorted_members
                 ],
                 "overview": {
@@ -1803,17 +1885,12 @@ def list_project_members(
             .all()
         )
         
-        items = []
-        for mem, user in members:
-            items.append({
-                "project_member_id": mem.id,
-                "user_id": user.id,
-                "name": user.name,
-                "email": user.email,
-                "profile_image_url": user.profile_image_url,
-                "project_role": mem.project_role,
-                "position_label": mem.position_label,
-            })
+        member_user_ids = [user.id for _mem, user in members]
+        member_activity_stats = _build_project_member_activity_stats(session, project_id, member_user_ids)
+        items = [
+            _serialize_project_member_summary(mem, user, member_activity_stats.get(user.id))
+            for mem, user in members
+        ]
             
         return {"items": items}
     finally:
@@ -2362,7 +2439,7 @@ def update_activity(
             raise HTTPException(status_code=403, detail="Only author can update")
         
         # Save revision history
-        now = datetime.now()
+        now = _activity_updated_at(activity)
         rev = models.ActivityRevisionHistory(
             activity_id=activity.id,
             edited_by_user_id=user_id,
@@ -2424,7 +2501,7 @@ def update_activity(
                 ))
         
         activity.last_edited_by_user_id = user_id
-        activity.updated_at = datetime.now()
+        activity.updated_at = _activity_updated_at(activity)
         
         session.commit()
         return {"status": "success"}
@@ -2465,7 +2542,7 @@ def approve_peer_support_activity(
             
         activity.review_state = "RESOLVED"
         activity.credibility_level = "PEER_CONFIRMED"
-        activity.updated_at = datetime.now()
+        activity.updated_at = _activity_updated_at(activity)
         
         session.commit()
         return {"status": "success"}

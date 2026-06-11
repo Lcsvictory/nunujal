@@ -1877,7 +1877,7 @@ textarea {
   min-height: 28px;
   padding: 0 10px;
   border-radius: 999px;
-  background: #f08a2c;
+  background: #dc2626;
   color: #ffffff;
   font-size: 0.78rem;
   font-weight: 800;
@@ -2096,12 +2096,12 @@ textarea {
 }
 
 .gantt-library-shell .gantt-timeline-today-cell {
-  background: rgba(255, 242, 226, 0.98);
+  background: rgba(255, 235, 238, 0.9);
 }
 
 .gantt-library-shell .gantt_marker.gantt-today-marker {
   width: 2px;
-  background: #f08a2c;
+  background: #dc2626;
 }
 
 .gantt-library-shell .gantt_marker.gantt-today-marker .gantt_marker_content {
@@ -2110,7 +2110,7 @@ textarea {
   min-height: 28px;
   padding: 0 10px;
   border-radius: 999px;
-  background: #f08a2c;
+  background: #dc2626;
   color: #ffffff;
   font-size: 0.78rem;
   font-weight: 800;

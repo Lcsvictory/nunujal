@@ -12,6 +12,15 @@ type MemberStats = {
   done: number;
 };
 
+const EMPTY_ACTIVITY_STATS = {
+  total_count: 0,
+  basic_count: 0,
+  peer_support_count: 0,
+  common_count: 0,
+  under_review_count: 0,
+  resolved_count: 0,
+};
+
 export function ProjectMembersPage({ project }: ProjectMembersPageProps) {
   const [members, setMembers] = useState<ProjectMemberSummary[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
@@ -100,6 +109,7 @@ export function ProjectMembersPage({ project }: ProjectMembersPageProps) {
       <div className="workspace-summary-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", marginBottom: "3rem" }}>
         {members.map(m => {
           const stats = memberStats[m.user_id] || { total: 0, inProgress: 0, done: 0 };
+          const activityStats = m.activity_stats ?? EMPTY_ACTIVITY_STATS;
           return (
             <article key={m.project_member_id} className="workspace-summary-item" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -132,6 +142,24 @@ export function ProjectMembersPage({ project }: ProjectMembersPageProps) {
                 <div>
                   <div style={{ fontSize: "0.8rem", color: "var(--text-muted, #666)", marginBottom: "4px" }}>완료</div>
                   <strong style={{ fontSize: "1.1rem", color: "var(--status-success, #10b981)" }}>{stats.done}</strong>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px", textAlign: "center", background: "rgba(37, 99, 235, 0.06)", padding: "12px", borderRadius: "8px" }}>
+                <div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted, #666)", marginBottom: "4px" }}>활동</div>
+                  <strong style={{ fontSize: "1.05rem", color: "var(--text-primary, #111)" }}>{activityStats.total_count}</strong>
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted, #666)", marginBottom: "4px" }}>도움</div>
+                  <strong style={{ fontSize: "1.05rem", color: "#7c3aed" }}>{activityStats.peer_support_count}</strong>
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted, #666)", marginBottom: "4px" }}>검토중</div>
+                  <strong style={{ fontSize: "1.05rem", color: "#f59e0b" }}>{activityStats.under_review_count}</strong>
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted, #666)", marginBottom: "4px" }}>공통</div>
+                  <strong style={{ fontSize: "1.05rem", color: "#0891b2" }}>{activityStats.common_count}</strong>
                 </div>
               </div>
             </article>
