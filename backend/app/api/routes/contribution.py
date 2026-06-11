@@ -199,7 +199,7 @@ def _analysis_query(session: Session, project_id: int):
             .joinedload(models.FeedbackReview.target_user)
         )
         .filter(models.AiAnalysis.project_id == project_id)
-        .order_by(models.AiAnalysis.created_at.desc(), models.AiAnalysis.id.desc())
+        .order_by(models.AiAnalysis.id.desc())
     )
 
 

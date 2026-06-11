@@ -30,6 +30,15 @@ export type ProjectListResponse = {
   count: number;
 };
 
+export type ProjectMemberActivityStats = {
+  total_count: number;
+  basic_count: number;
+  peer_support_count: number;
+  common_count: number;
+  under_review_count: number;
+  resolved_count: number;
+};
+
 export type ProjectMemberSummary = {
   project_member_id: number;
   user_id: number;
@@ -38,6 +47,7 @@ export type ProjectMemberSummary = {
   profile_image_url?: string;
   project_role: string;
   position_label: string;
+  activity_stats?: ProjectMemberActivityStats;
 };
 
 export type ProjectRecentActivity = {
@@ -322,6 +332,7 @@ export type ContributionEventMessage = {
     project_id: number;
     analysis_id: number | null;
     status: string | null;
+    message?: string | null;
   } | null;
   payload: ContributionLatestResponse;
 };

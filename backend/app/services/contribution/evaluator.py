@@ -96,6 +96,48 @@ def _format_score(value: Decimal | None) -> str:
     return f"{_clamp_score(value or 0):.2f}".rstrip("0").rstrip(".")
 
 
+def _is_temporary_ai_capacity_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "503" in message and ("unavailable" in message or "high demand" in message)
+
+
+def _temporary_ai_capacity_message() -> str:
+    return "AI 기여도 측정 요청에 실패했습니다. Gemini 모델 요청이 일시적으로 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
+
+
+def _delete_failed_objection_review(
+    session: Session,
+    *,
+    analysis: models.AiAnalysis,
+    snapshot: dict[str, Any],
+) -> None:
+    if analysis.analysis_mode != "DISPUTE_AWARE":
+        return
+
+    review_ids = [
+        int(review["id"])
+        for review in snapshot.get("open_feedback_reviews", [])
+        if isinstance(review, dict) and review.get("id") is not None
+    ]
+    if not review_ids:
+        return
+
+    review = (
+        session.query(models.FeedbackReview)
+        .filter(
+            models.FeedbackReview.id.in_(review_ids),
+            models.FeedbackReview.project_id == analysis.project_id,
+            models.FeedbackReview.author_user_id == analysis.requested_by_user_id,
+            models.FeedbackReview.request_type == "RESULT_DISPUTE",
+            models.FeedbackReview.request_status.in_(["OPEN", "UNDER_REVIEW"]),
+        )
+        .order_by(models.FeedbackReview.created_at.desc(), models.FeedbackReview.id.desc())
+        .first()
+    )
+    if review is not None:
+        session.delete(review)
+
+
 def _build_dispute_resolution_note(
     *,
     base_summary: str,
@@ -294,6 +336,7 @@ def process_contribution_analysis(
         analysis.status = "COMPLETED"
         analysis.completed_at = datetime.now()
         new_scores: dict[int, Decimal] = {}
+        new_results_by_user_id: dict[int, models.ContributionResult] = {}
 
         for member_result in member_results:
             target_user_id = int(member_result["user_id"])
@@ -333,6 +376,9 @@ def process_contribution_analysis(
                 ),
             )
             session.add(contribution_result)
+            new_results_by_user_id[target_user_id] = contribution_result
+
+        session.flush()
 
         if analysis.analysis_mode == "DISPUTE_AWARE":
             open_reviews = (
@@ -358,6 +404,12 @@ def process_contribution_analysis(
             )
             now = datetime.now()
             for review in open_reviews:
+                target_user_id = review.target_user_id
+                if target_user_id is None and review.contribution_result is not None:
+                    target_user_id = review.contribution_result.target_user_id
+                if target_user_id is not None and target_user_id in new_results_by_user_id:
+                    review.target_user_id = target_user_id
+                    review.contribution_result = new_results_by_user_id[target_user_id]
                 review.request_status = "REFLECTED"
                 review.reviewed_by_user_id = requested_by_user.id
                 review.reviewed_at = now
@@ -368,7 +420,11 @@ def process_contribution_analysis(
     except Exception as exc:
         analysis.status = "FAILED"
         analysis.completed_at = datetime.now()
-        analysis.input_summary = f"AI 기여도 평가 실패: {exc}"
+        if _is_temporary_ai_capacity_error(exc):
+            analysis.input_summary = _temporary_ai_capacity_message()
+            _delete_failed_objection_review(session, analysis=analysis, snapshot=snapshot)
+        else:
+            analysis.input_summary = f"AI 기여도 평가 실패: {exc}"
         logger.exception(
             "AI 기여도 평가 처리 중 실패했습니다. project_id=%s analysis_id=%s",
             analysis.project_id,

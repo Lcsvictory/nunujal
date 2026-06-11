@@ -79,12 +79,14 @@ class ContributionAssessmentQueue:
         *,
         analysis_id: int | None = None,
         status: str | None = None,
+        message: str | None = None,
     ) -> None:
         event = {
             "type": event_type,
             "project_id": project_id,
             "analysis_id": analysis_id,
             "status": status,
+            "message": message,
         }
         with self._lock:
             subscribers = list(self._subscribers.get(project_id, set()))
@@ -236,6 +238,7 @@ class ContributionAssessmentQueue:
                 "completed" if analysis.status == "COMPLETED" else "failed",
                 analysis_id=analysis.id,
                 status=analysis.status,
+                message=analysis.input_summary,
             )
         except Exception:
             session.rollback()
@@ -256,6 +259,7 @@ class ContributionAssessmentQueue:
                         "failed",
                         analysis_id=failed_analysis.id,
                         status=failed_analysis.status,
+                        message=failed_analysis.input_summary,
                     )
             finally:
                 failed_session.close()

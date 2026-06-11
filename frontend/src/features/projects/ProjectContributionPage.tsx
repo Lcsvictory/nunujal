@@ -161,7 +161,11 @@ export function ProjectContributionPage({ project }: ProjectContributionPageProp
         const message = JSON.parse((event as MessageEvent<string>).data) as ContributionEventMessage;
         setData(message.payload);
         setIsLoading(false);
-        setErrorMessage(null);
+        if (message.type === "failed") {
+          setErrorMessage(message.event?.message ?? "AI 기여도 측정 요청에 실패했습니다.");
+        } else {
+          setErrorMessage(null);
+        }
       } catch {
         setErrorMessage("기여도 실시간 응답을 처리하지 못했습니다.");
       }
